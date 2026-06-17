@@ -32,7 +32,7 @@ Khi cần implement hoặc cải tiến các tính năng dưới đây, **ưu ti
 - **Ngôn ngữ:** Python 3.x
 - **UI Framework:** PyQt5
 - **Data Engine:** Pandas
-- **Thuật toán UI tham khảo:** [PandasGUI](https://github.com/adamerose/PandasGUI.git)
+- **Thuật toán UI & Engine tham khảo:** [PandasGUI](https://github.com/adamerose/PandasGUI.git)
 
 ## Quy trình xử lý (Workflow)
 1. **Input:** Người dùng load file CSV/Excel vào ứng dụng.
