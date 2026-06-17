@@ -101,6 +101,13 @@ class Recipe:
             elif op == 'use_first_row_as_header':
                 lines.append("df.columns = df.iloc[0].astype(str).tolist()")
                 lines.append("df = df.iloc[1:].reset_index(drop=True)")
+            elif op == 'cast_column':
+                col = p.get('column')
+                to_type = p.get('to_type', 'text')
+                if to_type == 'numeric':
+                    lines.append(f"df['{col}'] = pd.to_numeric(df['{col}'].astype(str), errors='coerce')")
+                else:
+                    lines.append(f"df['{col}'] = df['{col}'].astype(str)")
 
         lines += ['', "# df.to_csv('output.csv', index=False, encoding='utf-8-sig')"]
         return '\n'.join(lines)

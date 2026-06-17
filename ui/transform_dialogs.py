@@ -96,7 +96,7 @@ class FilterDialog(QDialog):
     ]
     _NO_VALUE = {'is_empty', 'is_not_empty'}
 
-    def __init__(self, columns, parent=None):
+    def __init__(self, columns, parent=None, preselect: str = None):
         super().__init__(parent)
         self.setWindowTitle('Filter Rows')
         self.setMinimumWidth(420)
@@ -110,6 +110,8 @@ class FilterDialog(QDialog):
 
         self.col_combo = QComboBox()
         self.col_combo.addItems(columns)
+        if preselect and preselect in columns:
+            self.col_combo.setCurrentIndex(columns.index(preselect))
         form.addRow('Column:', self.col_combo)
 
         self.cond_combo = QComboBox()
@@ -213,7 +215,7 @@ class DropColumnsDialog(QDialog):
 # ---------------------------------------------------------------------------
 
 class RenameColumnDialog(QDialog):
-    def __init__(self, columns, parent=None):
+    def __init__(self, columns, parent=None, preselect: str = None):
         super().__init__(parent)
         self.setWindowTitle('Rename Column')
         self.setMinimumWidth(380)
@@ -227,6 +229,8 @@ class RenameColumnDialog(QDialog):
 
         self.col_combo = QComboBox()
         self.col_combo.addItems(columns)
+        if preselect and preselect in columns:
+            self.col_combo.setCurrentIndex(columns.index(preselect))
         form.addRow('Column:', self.col_combo)
 
         self.new_name_edit = QLineEdit()

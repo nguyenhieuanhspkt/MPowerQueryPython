@@ -64,6 +64,16 @@ class DataEngine:
         elif op == 'use_first_row_as_header':
             self._current.columns = self._current.iloc[0].astype(str).tolist()
             self._current = self._current.iloc[1:].reset_index(drop=True)
+        elif op == 'cast_column':
+            col = params.get('column')
+            to_type = params.get('to_type', 'text')
+            col_positions = [i for i, c in enumerate(self._current.columns) if c == col]
+            col_ix = col_positions[0] if col_positions else 0
+            if to_type == 'numeric':
+                self._current.iloc[:, col_ix] = to_numeric_vn(
+                    self._current.iloc[:, col_ix].astype(str), decimal=self._decimal)
+            else:
+                self._current.iloc[:, col_ix] = self._current.iloc[:, col_ix].astype(str)
 
         return self._current
 
@@ -80,10 +90,33 @@ class DataEngine:
     def export(self, path: str):
         if self._current is None:
             return
+        df_out = self._to_typed_df()
         if path.lower().endswith('.csv'):
-            self._current.to_csv(path, index=False, encoding='utf-8-sig')
+            df_out.to_csv(path, index=False, encoding='utf-8-sig', decimal=self._decimal)
         else:
-            self._current.to_excel(path, index=False)
+            df_out.to_excel(path, index=False)
+
+    def _to_typed_df(self) -> 'pd.DataFrame':
+        """Infer numeric types for export columns.
+
+        Converts string columns where ≥90% of non-empty values parse as numbers
+        so that Excel/CSV receives proper numeric cells instead of text strings.
+        Uses the file's decimal setting (VN comma vs. international dot).
+        """
+        df = self._current.copy()
+        for col in df.columns:
+            series = df[col]
+            if series.dtype != object:
+                continue
+            non_empty = series.dropna()
+            non_empty = non_empty[non_empty.astype(str).str.strip() != '']
+            if len(non_empty) == 0:
+                continue
+            sample = to_numeric_vn(non_empty.astype(str), decimal=self._decimal)
+            if sample.notna().sum() / len(non_empty) < 0.9:
+                continue
+            df[col] = to_numeric_vn(series.astype(str), decimal=self._decimal)
+        return df
 
     @property
     def current(self) -> Optional[pd.DataFrame]:
@@ -107,7 +140,11 @@ class DataEngine:
         col = params['column']
         condition = params['condition']
         value = str(params.get('value', ''))
-        series = df[col]
+        # Use positional index (PandasGUI pattern) to avoid duplicate-column-name issue
+        # where df[col_name] returns a DataFrame instead of a Series
+        col_positions = [i for i, c in enumerate(df.columns) if c == col]
+        col_ix = col_positions[0] if col_positions else 0
+        series = df.iloc[:, col_ix]
 
         _NUMERIC = {'greater_than', 'less_than', 'greater_equal', 'less_equal'}
 

@@ -10,7 +10,7 @@ from PyQt5.QtGui import QColor, QFont
 
 from core.data_engine import DataEngine
 from core.recipe import Recipe
-from ui.pandas_model import PandasModel
+from ui.pandas_model import PandasModel, SelectableHeaderView, ColumnHighlightDelegate
 from core.utils import detect_csv_sep
 from ui.transform_dialogs import (
     FilterDialog, DropColumnsDialog, RenameColumnDialog,
@@ -27,6 +27,7 @@ _STEP_META = {
     'fillna':                ('Fill NA',               '#16A085'),
     'remove_top_rows':       ('Remove Top Rows',       '#C0392B'),
     'use_first_row_as_header': ('Use Row 1 as Header', '#8E44AD'),
+    'cast_column':           ('Cast Type',             '#6366F1'),
 }
 
 
@@ -190,9 +191,22 @@ class MainWindow(QMainWindow):
         self._table_view.setObjectName('data_table')
         self._table_view.setAlternatingRowColors(True)
         self._table_view.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self._table_view.horizontalHeader().setMinimumSectionSize(80)
         self._table_view.verticalHeader().setDefaultSectionSize(24)
         self._table_view.setShowGrid(True)
+
+        self._col_header = SelectableHeaderView(self._table_view)
+        self._col_header.setMinimumSectionSize(80)
+        self._col_header.setFixedHeight(40)
+        self._col_header.sig_drop_columns.connect(self._on_header_drop_columns)
+        self._col_header.sig_filter_column.connect(self._on_header_filter_column)
+        self._col_header.sig_filter_not_empty.connect(self._on_header_filter_not_empty)
+        self._col_header.sig_rename_column.connect(self._on_header_rename_column)
+        self._col_header.sig_cast_column.connect(self._on_header_cast_column)
+        self._table_view.setHorizontalHeader(self._col_header)
+
+        self._col_delegate = ColumnHighlightDelegate(self._col_header, self._table_view)
+        self._table_view.setItemDelegate(self._col_delegate)
+
         self._model = PandasModel()
         self._table_view.setModel(self._model)
         self._table_view.hide()
@@ -249,8 +263,11 @@ class MainWindow(QMainWindow):
             if sheet_name:
                 recipe_name += f' [{sheet_name}]'
             self.recipe = Recipe(recipe_name)
+            self._col_header.clear_selection()
+            self._model.set_decimal(decimal)
             self._refresh_table(df)
             self._refresh_pipeline()
+            self._update_filter_highlights()
             self._set_data_actions_enabled(True)
             self._empty_label.hide()
             self._table_view.show()
@@ -306,6 +323,7 @@ class MainWindow(QMainWindow):
                 self._refresh_table(df)
                 self._refresh_pipeline()
                 self._update_status()
+                self._update_filter_highlights()
             QMessageBox.information(self, 'Loaded', f'Recipe loaded:\n{path}')
         except Exception as exc:
             QMessageBox.critical(self, 'Load Error', str(exc))
@@ -359,8 +377,46 @@ class MainWindow(QMainWindow):
             self._refresh_table(df)
             self._refresh_pipeline()
             self._update_status()
+            self._update_filter_highlights()
         except Exception as exc:
             QMessageBox.critical(self, 'Transform Error', str(exc))
+
+    def _on_header_drop_columns(self, cols: list):
+        self._apply_step({'operation': 'drop_columns', 'params': {'columns': cols}})
+        self._col_header.clear_selection()
+
+    def _on_header_filter_column(self, col_name: str):
+        if self.engine.current is None:
+            return
+        cols = list(self.engine.current.columns)
+        dlg = FilterDialog(cols, self, preselect=col_name)
+        if dlg.exec_():
+            self._apply_step(dlg.get_step())
+
+    def _on_header_filter_not_empty(self, col_name: str):
+        self._apply_step({
+            'operation': 'filter',
+            'params': {'column': col_name, 'condition': 'is_not_empty', 'value': ''},
+        })
+
+    def _on_header_rename_column(self, col_name: str):
+        if self.engine.current is None:
+            return
+        cols = list(self.engine.current.columns)
+        dlg = RenameColumnDialog(cols, self, preselect=col_name)
+        if dlg.exec_():
+            self._apply_step(dlg.get_step())
+
+    def _on_header_cast_column(self, col_name: str, to_type: str):
+        self._apply_step({
+            'operation': 'cast_column',
+            'params': {'column': col_name, 'to_type': to_type},
+        })
+
+    def _update_filter_highlights(self):
+        filtered = {s['params']['column'] for s in self.recipe.steps
+                    if s['operation'] == 'filter'}
+        self._col_header.set_active_filters(filtered)
 
     def _undo_step(self):
         if not self.recipe.steps:
@@ -370,6 +426,7 @@ class MainWindow(QMainWindow):
         self._refresh_table(df)
         self._refresh_pipeline()
         self._update_status()
+        self._update_filter_highlights()
 
     def _reset_data(self):
         if self.engine.original is None:
@@ -382,9 +439,11 @@ class MainWindow(QMainWindow):
         if reply == QMessageBox.Yes:
             df = self.engine.reset()
             self.recipe.steps.clear()
+            self._col_header.clear_selection()
             self._refresh_table(df)
             self._refresh_pipeline()
             self._update_status()
+            self._update_filter_highlights()
 
     def _show_code(self):
         code = self.recipe.to_pandas_code(self.engine.source_path)
@@ -395,6 +454,7 @@ class MainWindow(QMainWindow):
 
     def _refresh_table(self, df):
         self._model.setDataFrame(df)
+        self._col_header.set_type_hints(self._model.column_type_hints())
         for col in range(self._model.columnCount()):
             self._table_view.setColumnWidth(col, max(100, min(220, 20 * len(str(df.columns[col])))))
 
@@ -431,6 +491,10 @@ class MainWindow(QMainWindow):
             return f"bỏ {n} dòng đầu"
         if op == 'use_first_row_as_header':
             return 'dòng 1 → tên cột'
+        if op == 'cast_column':
+            col = p.get('column', '')
+            to_type = 'Number (123)' if p.get('to_type') == 'numeric' else 'Text (ABC)'
+            return f"{col}  →  {to_type}"
         return ''
 
     def _update_status(self):
