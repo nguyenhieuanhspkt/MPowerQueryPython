@@ -14,6 +14,7 @@ _OP_LABELS = {
     'use_first_row_as_header': 'Use Row as Header',
     'cast_column':             'Cast Type',
     'group_rows':              'Group Rows',
+    'add_index_column':        'Add Index (STT)',
 }
 
 
@@ -35,6 +36,8 @@ class DataEngine:
         else:
             kw = {'sheet_name': sheet_name} if sheet_name is not None else {}
             self._original = pd.read_excel(path, dtype=str, **kw)
+        # Normalize all column names to str — Excel headers can be int/float
+        self._original.columns = [str(c) for c in self._original.columns]
         self._current = self._original.copy()
         return self._current
 
@@ -107,6 +110,13 @@ class DataEngine:
                     self._current.iloc[:, col_ix].astype(str), decimal=self._decimal)
             else:
                 self._current.iloc[:, col_ix] = self._current.iloc[:, col_ix].astype(str)
+        elif op == 'add_index_column':
+            col_name = params.get('col_name', 'STT')
+            position = int(params.get('position', 0))
+            actual = self._unique_col_name(col_name)
+            params['col_name'] = actual
+            self._current.insert(position, actual, range(1, len(self._current) + 1))
+
         elif op == 'group_rows':
             by_cols = params.get('by', [])
             agg_dict = params.get('aggregations', {})

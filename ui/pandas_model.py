@@ -120,6 +120,8 @@ class PandasModel(QAbstractTableModel):
                 s = _add_thousands(s, self._decimal)
             return s
         if role == Qt.TextAlignmentRole:
+            if self._type_hints.get(index.column()) == 'numeric':
+                return Qt.AlignVCenter | Qt.AlignRight
             return Qt.AlignVCenter | Qt.AlignLeft
         return QVariant()
 
@@ -146,12 +148,13 @@ class SelectableHeaderView(QHeaderView):
     - Right-click context menu: filter shortcuts, rename, cast type, drop/keep
     """
 
-    sig_drop_columns     = pyqtSignal(list)       # list of col names → drop them
-    sig_filter_column    = pyqtSignal(str)        # col name → open FilterDialog
-    sig_filter_not_empty = pyqtSignal(str)        # col name → add is_not_empty filter step
-    sig_rename_column    = pyqtSignal(str)        # col name → open RenameColumnDialog
-    sig_cast_column      = pyqtSignal(str, str)   # col name, to_type ('numeric'/'text')
-    sig_selection_changed = pyqtSignal(list)      # list of selected col indices
+    sig_drop_columns      = pyqtSignal(list)       # list of col names → drop them
+    sig_filter_column     = pyqtSignal(str)        # col name → open FilterDialog
+    sig_filter_not_empty  = pyqtSignal(str)        # col name → add is_not_empty filter step
+    sig_rename_column     = pyqtSignal(str)        # col name → open RenameColumnDialog
+    sig_cast_column       = pyqtSignal(str, str)   # col name, to_type ('numeric'/'text')
+    sig_selection_changed = pyqtSignal(list)       # list of selected col indices
+    sig_add_index_column  = pyqtSignal()           # insert STT column at position 0
 
     _ICON_W = 22    # px: filter icon zone (right edge)
     _TYPE_W = 30    # px: type badge zone (just left of filter icon)
@@ -445,6 +448,11 @@ class SelectableHeaderView(QHeaderView):
             self)
         act_drop.triggered.connect(lambda: self.sig_drop_columns.emit(selected_names))
         menu.addAction(act_drop)
+
+        menu.addSeparator()
+        act_index = QAction('Add Index Column  (STT: 1, 2, 3…)', self)
+        act_index.triggered.connect(self.sig_add_index_column.emit)
+        menu.addAction(act_index)
 
         menu.exec_(self.viewport().mapToGlobal(pos))
 

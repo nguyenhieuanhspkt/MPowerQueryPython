@@ -119,5 +119,10 @@ class Recipe:
                 else:
                     lines.append(f"df = df[{by_str}].drop_duplicates().reset_index(drop=True)")
 
+            elif op == 'add_index_column':
+                col = p.get('col_name', 'STT')
+                pos = int(p.get('position', 0))
+                lines.append(f"df.insert({pos}, '{col}', range(1, len(df) + 1))")
+
         lines += ['', "# df.to_csv('output.csv', index=False, encoding='utf-8-sig')"]
         return '\n'.join(lines)

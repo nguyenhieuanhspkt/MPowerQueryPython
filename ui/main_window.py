@@ -3,10 +3,11 @@ from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QSplitter,
     QTableView, QListWidget, QListWidgetItem, QLabel, QPushButton,
     QToolBar, QAction, QFileDialog, QStatusBar, QMessageBox,
-    QFrame, QAbstractItemView, QSizePolicy, QMenu
+    QFrame, QAbstractItemView, QSizePolicy, QInputDialog,
+    QStyledItemDelegate, QStyle,
 )
-from PyQt5.QtCore import Qt, QSize
-from PyQt5.QtGui import QColor, QFont
+from PyQt5.QtCore import Qt, QSize, QRect, QEvent
+from PyQt5.QtGui import QColor, QFont, QPainter
 
 from core.data_engine import DataEngine
 from core.recipe import Recipe
@@ -47,7 +48,40 @@ _STEP_META = {
     'use_first_row_as_header': ('Use Row 1 as Header', '#8E44AD'),
     'cast_column':           ('Cast Type',             '#6366F1'),
     'group_rows':            ('Group Rows',            '#F39C12'),
+    'add_index_column':      ('Add Index (STT)',        '#10B981'),
 }
+
+
+class _PipelineDeleteDelegate(QStyledItemDelegate):
+    """Paints a × delete button on the right side of each pipeline step item."""
+    _BTN_W  = 18
+    _BTN_H  = 18
+    _MARGIN = 8   # distance from right edge of item
+
+    def paint(self, painter: QPainter, option, index):
+        super().paint(painter, option, index)
+        btn = self._btn_rect(option.rect)
+        selected = bool(option.state & QStyle.State_Selected)
+        painter.save()
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QColor('#666666' if selected else '#DDDDDD'))
+        painter.drawRoundedRect(btn, 4, 4)
+        f = QFont(painter.font())
+        f.setPixelSize(12)
+        f.setBold(True)
+        painter.setFont(f)
+        painter.setPen(QColor('#EEEEEE' if selected else '#888888'))
+        painter.drawText(btn, Qt.AlignCenter, '×')
+        painter.restore()
+
+    def _btn_rect(self, item_rect) -> QRect:
+        x = item_rect.right() - self._BTN_W - self._MARGIN
+        y = item_rect.center().y() - self._BTN_H // 2
+        return QRect(x, y, self._BTN_W, self._BTN_H)
+
+    def hit_delete(self, pos, item_rect) -> bool:
+        return self._btn_rect(item_rect).contains(pos)
 
 
 class MainWindow(QMainWindow):
@@ -56,10 +90,24 @@ class MainWindow(QMainWindow):
         self.engine = DataEngine()
         self.recipe = Recipe()
         self._refreshing_pipeline = False
+        self._stored_frames: list = []   # list of {'name', 'df', 'source', 'steps'}
         self._init_ui()
         self._apply_style()
 
     # ------------------------------------------------------------------ setup
+
+    def eventFilter(self, obj, event):
+        if (obj is self.pipeline_list.viewport()
+                and event.type() == QEvent.MouseButtonPress
+                and event.button() == Qt.LeftButton):
+            item = self.pipeline_list.itemAt(event.pos())
+            if item is not None:
+                row = self.pipeline_list.row(item)
+                rect = self.pipeline_list.visualItemRect(item)
+                if self._pipeline_delegate.hit_delete(event.pos(), rect):
+                    self._delete_step(row)
+                    return True
+        return super().eventFilter(obj, event)
 
     def _init_ui(self):
         self.setWindowTitle('MPowerQueryPython')
@@ -154,20 +202,28 @@ class MainWindow(QMainWindow):
         layout.setSpacing(8)
         self.setCentralWidget(central)
 
-        splitter = QSplitter(Qt.Horizontal)
-        layout.addWidget(splitter)
+        h_splitter = QSplitter(Qt.Horizontal)
+        layout.addWidget(h_splitter)
 
-        splitter.addWidget(self._build_pipeline_panel())
-        splitter.addWidget(self._build_table_panel())
-        splitter.setSizes([270, 1050])
-        splitter.setStretchFactor(0, 0)
-        splitter.setStretchFactor(1, 1)
+        # Left column: pipeline + store panels stacked vertically
+        left_splitter = QSplitter(Qt.Vertical)
+        left_splitter.setObjectName('left_splitter')
+        left_splitter.setFixedWidth(270)
+        left_splitter.setChildrenCollapsible(False)
+        left_splitter.addWidget(self._build_pipeline_panel())
+        left_splitter.addWidget(self._build_store_panel())
+        left_splitter.setSizes([510, 210])
+
+        h_splitter.addWidget(left_splitter)
+        h_splitter.addWidget(self._build_table_panel())
+        h_splitter.setSizes([270, 1050])
+        h_splitter.setStretchFactor(0, 0)
+        h_splitter.setStretchFactor(1, 1)
 
     def _build_pipeline_panel(self):
         panel = QFrame()
         panel.setObjectName('pipeline_panel')
         panel.setFrameShape(QFrame.StyledPanel)
-        panel.setFixedWidth(270)
         lay = QVBoxLayout(panel)
         lay.setContentsMargins(10, 10, 10, 10)
         lay.setSpacing(8)
@@ -179,9 +235,10 @@ class MainWindow(QMainWindow):
         self.pipeline_list = QListWidget()
         self.pipeline_list.setObjectName('pipeline_list')
         self.pipeline_list.setSelectionMode(QAbstractItemView.SingleSelection)
-        self.pipeline_list.setContextMenuPolicy(Qt.CustomContextMenu)
-        self.pipeline_list.customContextMenuRequested.connect(self._on_pipeline_context_menu)
         self.pipeline_list.currentRowChanged.connect(self._on_step_selected)
+        self._pipeline_delegate = _PipelineDeleteDelegate(self.pipeline_list)
+        self.pipeline_list.setItemDelegate(self._pipeline_delegate)
+        self.pipeline_list.viewport().installEventFilter(self)
         lay.addWidget(self.pipeline_list)
 
         btn_row = QHBoxLayout()
@@ -229,6 +286,7 @@ class MainWindow(QMainWindow):
         self._col_header.sig_rename_column.connect(self._on_header_rename_column)
         self._col_header.sig_cast_column.connect(self._on_header_cast_column)
         self._col_header.sig_selection_changed.connect(self._on_col_selection_changed)
+        self._col_header.sig_add_index_column.connect(self._on_header_add_index)
         self._table_view.setHorizontalHeader(self._col_header)
 
         self._col_delegate = ColumnHighlightDelegate(self._col_header, self._table_view)
@@ -239,6 +297,62 @@ class MainWindow(QMainWindow):
         self._table_view.hide()
         lay.addWidget(self._table_view)
 
+        return panel
+
+    def _build_store_panel(self):
+        panel = QFrame()
+        panel.setObjectName('store_panel')
+        panel.setFrameShape(QFrame.StyledPanel)
+        lay = QVBoxLayout(panel)
+        lay.setContentsMargins(10, 8, 10, 10)
+        lay.setSpacing(6)
+
+        # Header row: title + frame count badge
+        hdr = QHBoxLayout()
+        title = QLabel('Stored Frames')
+        title.setObjectName('panel_title')
+        hdr.addWidget(title)
+        hdr.addStretch()
+        self._lbl_store_count = QLabel('')
+        self._lbl_store_count.setObjectName('store_count_badge')
+        hdr.addWidget(self._lbl_store_count)
+        lay.addLayout(hdr)
+
+        # Frame list
+        self._store_list = QListWidget()
+        self._store_list.setObjectName('store_list')
+        self._store_list.setSelectionMode(QAbstractItemView.SingleSelection)
+        self._store_list.currentRowChanged.connect(self._on_stored_selected)
+        lay.addWidget(self._store_list)
+
+        # Action buttons: ← Back | Duplicate | Delete
+        btn_row = QHBoxLayout()
+        self._btn_store_back = QPushButton('← Back')
+        self._btn_store_back.setObjectName('btn_store_back')
+        self._btn_store_back.setToolTip('Exit stored frame preview, return to pipeline view')
+        self._btn_store_back.clicked.connect(self._exit_stored_view)
+        self._btn_store_dup = QPushButton('Duplicate')
+        self._btn_store_dup.setObjectName('btn_secondary')
+        self._btn_store_dup.setToolTip('Clone selected frame')
+        self._btn_store_dup.clicked.connect(self._duplicate_stored)
+        self._btn_store_del = QPushButton('Delete')
+        self._btn_store_del.setObjectName('btn_danger')
+        self._btn_store_del.setToolTip('Remove selected frame from store')
+        self._btn_store_del.clicked.connect(self._delete_stored)
+        btn_row.addWidget(self._btn_store_back)
+        btn_row.addWidget(self._btn_store_dup)
+        btn_row.addWidget(self._btn_store_del)
+        lay.addLayout(btn_row)
+
+        # Save button
+        self._btn_store_save = QPushButton('+ Save Current Frame')
+        self._btn_store_save.setObjectName('btn_store_save')
+        self._btn_store_save.setToolTip('Snapshot the current DataFrame into the store')
+        self._btn_store_save.clicked.connect(self._save_current_to_store)
+        self._btn_store_save.setEnabled(False)
+        lay.addWidget(self._btn_store_save)
+
+        self._update_store_buttons()
         return panel
 
     def _create_status_bar(self):
@@ -282,6 +396,7 @@ class MainWindow(QMainWindow):
         self._btn_undo.setEnabled(enabled)
         self._btn_reset.setEnabled(enabled)
         self._btn_code.setEnabled(enabled)
+        self._btn_store_save.setEnabled(enabled)
 
     def _open_file(self):
         path, _ = QFileDialog.getOpenFileName(
@@ -470,6 +585,9 @@ class MainWindow(QMainWindow):
             'params': {'column': col_name, 'to_type': to_type},
         })
 
+    def _on_header_add_index(self):
+        self._apply_step({'operation': 'add_index_column', 'params': {}})
+
     def _on_col_selection_changed(self, col_indices: list):
         if not col_indices:
             self._lbl_aggregate.setText('')
@@ -511,6 +629,11 @@ class MainWindow(QMainWindow):
         n = len(self.recipe.steps)
         if row < 0 or row >= n:
             return
+        # Deselect stored frame view when user returns to pipeline
+        self._store_list.blockSignals(True)
+        self._store_list.setCurrentRow(-1)
+        self._store_list.blockSignals(False)
+        self._update_store_buttons()
         if row == n - 1:
             # Last step = full pipeline = no preview needed
             self._model.setDataFrame(self.engine.current)
@@ -527,25 +650,106 @@ class MainWindow(QMainWindow):
         self._col_header.set_type_hints(self._model.column_type_hints())
         self._update_status(preview_idx=row, df=preview_df)
 
-    def _on_pipeline_context_menu(self, pos):
-        row = self.pipeline_list.currentRow()
-        if row < 0 or row >= len(self.recipe.steps):
+    # --------------------------------------------------------- stored frames
+
+    def _on_stored_selected(self, row: int):
+        """Preview a stored frame in the table (no engine state change)."""
+        self._update_store_buttons()
+        if row < 0 or row >= len(self._stored_frames):
             return
-        op = self.recipe.steps[row]['operation']
-        label, _ = _STEP_META.get(op, (op, '#888888'))
-        menu = QMenu(self)
-        menu.setStyleSheet("""
-            QMenu { background:#3C3F41; color:#CCCCCC; border:1px solid #555; font-size:12px; }
-            QMenu::item:selected { background:#E25757; color:white; }
-            QMenu::item:disabled { color:#777; font-style:italic; }
-            QMenu::separator { background:#555; height:1px; margin:4px 8px; }
-        """)
-        header = menu.addAction(f'Step {row + 1}: {label}')
-        header.setEnabled(False)
-        menu.addSeparator()
-        act_del = menu.addAction('Delete This Step')
-        act_del.triggered.connect(lambda: self._delete_step(row))
-        menu.exec_(self.pipeline_list.viewport().mapToGlobal(pos))
+        entry = self._stored_frames[row]
+        self._model.setDataFrame(entry['df'])
+        self._col_header.set_type_hints(self._model.column_type_hints())
+        r, c = entry['df'].shape
+        self._lbl_shape.setText(f'{r:,} rows  ×  {c} cols')
+        self._lbl_steps.setText(f"{entry['steps']} step(s) at save")
+        self._lbl_preview.setText(f"  STORED: {entry['name']}  ")
+        self._lbl_preview.show()
+        # Deselect pipeline list
+        self._refreshing_pipeline = True
+        self.pipeline_list.blockSignals(True)
+        self.pipeline_list.setCurrentRow(-1)
+        self.pipeline_list.blockSignals(False)
+        self._refreshing_pipeline = False
+
+    def _save_current_to_store(self):
+        if self.engine.current is None:
+            return
+        n = len(self._stored_frames) + 1
+        source = os.path.basename(self.engine.source_path) if self.engine.source_path else '—'
+        default_name = f'Frame {n}'
+        name, ok = QInputDialog.getText(
+            self, 'Save Frame to Store', 'Tên frame:', text=default_name
+        )
+        if not ok or not name.strip():
+            return
+        self._stored_frames.append({
+            'name': name.strip(),
+            'df': self.engine.current.copy(),
+            'source': source,
+            'steps': len(self.recipe.steps),
+        })
+        self._refresh_store()
+
+    def _duplicate_stored(self):
+        row = self._store_list.currentRow()
+        if row < 0 or row >= len(self._stored_frames):
+            return
+        entry = self._stored_frames[row]
+        new_entry = {**entry, 'name': entry['name'] + ' (copy)', 'df': entry['df'].copy()}
+        self._stored_frames.insert(row + 1, new_entry)
+        self._refresh_store()
+        self._store_list.setCurrentRow(row + 1)
+
+    def _delete_stored(self):
+        row = self._store_list.currentRow()
+        if row < 0 or row >= len(self._stored_frames):
+            return
+        name = self._stored_frames[row]['name']
+        reply = QMessageBox.question(
+            self, 'Delete Stored Frame', f'Xóa frame "{name}"?',
+            QMessageBox.Yes | QMessageBox.No
+        )
+        if reply != QMessageBox.Yes:
+            return
+        self._stored_frames.pop(row)
+        self._refresh_store()
+        self._restore_current_view()
+
+    def _exit_stored_view(self):
+        self._store_list.blockSignals(True)
+        self._store_list.setCurrentRow(-1)
+        self._store_list.blockSignals(False)
+        self._update_store_buttons()
+        self._restore_current_view()
+
+    def _restore_current_view(self):
+        if self.engine.current is not None:
+            self._model.setDataFrame(self.engine.current)
+            self._col_header.set_type_hints(self._model.column_type_hints())
+            self._update_status()
+
+    def _refresh_store(self):
+        self._store_list.blockSignals(True)
+        self._store_list.clear()
+        for entry in self._stored_frames:
+            r, c = entry['df'].shape
+            item = QListWidgetItem(
+                f"{entry['name']}\n  {r:,} × {c}  |  {entry['source']}"
+            )
+            self._store_list.addItem(item)
+        self._store_list.blockSignals(False)
+        count = len(self._stored_frames)
+        self._lbl_store_count.setText(str(count) if count else '')
+        self._update_store_buttons()
+
+    def _update_store_buttons(self):
+        has = self._store_list.currentRow() >= 0
+        self._btn_store_back.setEnabled(has)
+        self._btn_store_dup.setEnabled(has)
+        self._btn_store_del.setEnabled(has)
+
+    # ---------------------------------------------------------
 
     def _delete_step(self, idx: int):
         n = len(self.recipe.steps)
@@ -607,6 +811,12 @@ class MainWindow(QMainWindow):
     # ---------------------------------------------------------------- refresh
 
     def _refresh_table(self, df):
+        # If a stored frame is being previewed, deselect it — pipeline wins
+        if self._store_list.currentRow() >= 0:
+            self._store_list.blockSignals(True)
+            self._store_list.setCurrentRow(-1)
+            self._store_list.blockSignals(False)
+            self._update_store_buttons()
         self._model.setDataFrame(df)
         self._col_header.set_type_hints(self._model.column_type_hints())
         for col in range(self._model.columnCount()):
@@ -663,6 +873,9 @@ class MainWindow(QMainWindow):
             agg_parts = [f"{c}→{f}" for c, f in list(agg.items())[:3]]
             agg_str = ', '.join(agg_parts) + ('…' if len(agg) > 3 else '')
             return f"by: {by_str}  |  {agg_str}"
+        if op == 'add_index_column':
+            col = p.get('col_name', 'STT')
+            return f'cột "{col}" = 1, 2, 3…'
         return ''
 
     def _update_status(self, preview_idx: int = None, df=None):
@@ -754,6 +967,7 @@ class MainWindow(QMainWindow):
                 border-radius: 3px;
             }
             #pipeline_list::item:selected { background-color: #1E1E1E; border-radius: 3px; }
+            #pipeline_list::item:selected:!active { background-color: transparent; border-radius: 3px; }
 
             QPushButton#btn_secondary {
                 background-color: #6C757D; color: white;
@@ -812,5 +1026,60 @@ class MainWindow(QMainWindow):
                 background-color: #2B2D30;
                 color: #AAAAAA;
                 font-size: 11px;
+            }
+
+            #store_panel {
+                background-color: #FFFFFF;
+                border: 1px solid #DEE2E6;
+                border-radius: 6px;
+            }
+            #store_list {
+                background-color: #FAFBFC;
+                border: 1px solid #E9ECEF;
+                border-radius: 4px;
+                font-size: 11px;
+                padding: 4px;
+            }
+            #store_list::item {
+                padding: 5px 6px;
+                border-bottom: 1px solid #F0F0F0;
+                border-radius: 3px;
+                color: #495057;
+            }
+            #store_list::item:selected {
+                background-color: #E3F2FD;
+                color: #1565C0;
+                border-radius: 3px;
+            }
+            #store_list::item:selected:!active {
+                background-color: transparent;
+                border-radius: 3px;
+            }
+
+            QPushButton#btn_store_save {
+                background-color: #2196F3; color: white;
+                border: none; border-radius: 4px;
+                padding: 5px 12px; font-size: 11px; font-weight: bold;
+            }
+            QPushButton#btn_store_save:hover { background-color: #1976D2; }
+            QPushButton#btn_store_save:disabled { background-color: #BBDEFB; color: #90CAF9; }
+
+            QPushButton#btn_store_back {
+                background-color: #78909C; color: white;
+                border: none; border-radius: 4px;
+                padding: 5px 8px; font-size: 11px;
+            }
+            QPushButton#btn_store_back:hover { background-color: #607D8B; }
+            QPushButton#btn_store_back:disabled { background-color: #CFD8DC; color: #B0BEC5; }
+
+            #store_count_badge {
+                background-color: #4A90E2; color: white;
+                border-radius: 8px; padding: 1px 6px;
+                font-size: 10px; font-weight: bold;
+            }
+
+            QSplitter#left_splitter::handle {
+                background-color: #DEE2E6;
+                height: 5px;
             }
         """)
