@@ -2,7 +2,7 @@ from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QFormLayout,
     QComboBox, QLineEdit, QLabel, QPushButton,
     QCheckBox, QScrollArea, QWidget, QRadioButton,
-    QMessageBox, QTextEdit, QSplitter, QSpinBox
+    QMessageBox, QTextEdit, QSplitter, QSpinBox, QGroupBox
 )
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QFont
@@ -554,3 +554,125 @@ class CodePreviewDialog(QDialog):
         from PyQt5.QtWidgets import QToolTip
         from PyQt5.QtGui import QCursor
         QToolTip.showText(QCursor.pos(), 'Copied!')
+
+
+# ---------------------------------------------------------------------------
+# Group Rows dialog
+# ---------------------------------------------------------------------------
+
+class GroupRowsDialog(QDialog):
+    _AGG_FUNCS = [
+        ('none',  '— (bỏ qua)'),
+        ('count', 'Count  —  đếm số dòng'),
+        ('sum',   'Sum  —  tổng'),
+        ('mean',  'Mean  —  trung bình'),
+        ('min',   'Min  —  giá trị nhỏ nhất'),
+        ('max',   'Max  —  giá trị lớn nhất'),
+        ('first', 'First  —  giá trị đầu tiên'),
+        ('last',  'Last  —  giá trị cuối cùng'),
+    ]
+
+    def __init__(self, columns, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle('Group Rows (Aggregate)')
+        self.setMinimumSize(500, 560)
+        self.setStyleSheet(DIALOG_STYLE)
+
+        layout = QVBoxLayout(self)
+        layout.setSpacing(10)
+        layout.setContentsMargins(14, 14, 14, 14)
+
+        # ── Group By section ────────────────────────────────────────────────
+        gb_box = QGroupBox('Group by  (chọn cột(s) để nhóm)')
+        gb_box.setStyleSheet(
+            'QGroupBox { font-weight: bold; font-size: 12px; '
+            'border: 1px solid #CED4DA; border-radius: 4px; margin-top: 6px; padding-top: 6px; }'
+            'QGroupBox::title { subcontrol-origin: margin; left: 8px; }'
+        )
+        gb_inner_layout = QVBoxLayout(gb_box)
+
+        gb_scroll = QScrollArea()
+        gb_scroll.setWidgetResizable(True)
+        gb_scroll.setFixedHeight(140)
+        gb_scroll.setStyleSheet('QScrollArea { border: none; }')
+        gb_content = QWidget()
+        gb_content_layout = QVBoxLayout(gb_content)
+        gb_content_layout.setSpacing(3)
+        gb_content_layout.setContentsMargins(4, 4, 4, 4)
+
+        self._by_checks: dict = {}
+        for col in columns:
+            cb = QCheckBox(col)
+            cb.toggled.connect(self._sync_agg_state)
+            self._by_checks[col] = cb
+            gb_content_layout.addWidget(cb)
+        gb_content_layout.addStretch()
+        gb_scroll.setWidget(gb_content)
+        gb_inner_layout.addWidget(gb_scroll)
+        layout.addWidget(gb_box)
+
+        # ── Aggregation section ─────────────────────────────────────────────
+        agg_box = QGroupBox('Aggregate  (chọn hàm tổng hợp cho các cột còn lại)')
+        agg_box.setStyleSheet(
+            'QGroupBox { font-weight: bold; font-size: 12px; '
+            'border: 1px solid #CED4DA; border-radius: 4px; margin-top: 6px; padding-top: 6px; }'
+            'QGroupBox::title { subcontrol-origin: margin; left: 8px; }'
+        )
+        agg_inner_layout = QVBoxLayout(agg_box)
+
+        agg_scroll = QScrollArea()
+        agg_scroll.setWidgetResizable(True)
+        agg_scroll.setStyleSheet('QScrollArea { border: none; }')
+        agg_content = QWidget()
+        agg_form = QFormLayout(agg_content)
+        agg_form.setSpacing(6)
+        agg_form.setContentsMargins(4, 4, 4, 4)
+        agg_form.setLabelAlignment(Qt.AlignRight)
+
+        self._agg_combos: dict = {}
+        for col in columns:
+            combo = QComboBox()
+            for key, label in self._AGG_FUNCS:
+                combo.addItem(label, key)
+            self._agg_combos[col] = combo
+            agg_form.addRow(col + ':', combo)
+        agg_scroll.setWidget(agg_content)
+        agg_inner_layout.addWidget(agg_scroll)
+        layout.addWidget(agg_box)
+
+        btn_widget, ok_btn, cancel_btn = _button_row('Apply Group')
+        ok_btn.clicked.connect(self._on_ok)
+        cancel_btn.clicked.connect(self.reject)
+        layout.addWidget(btn_widget)
+
+    def _sync_agg_state(self):
+        for col, cb in self._by_checks.items():
+            combo = self._agg_combos[col]
+            if cb.isChecked():
+                combo.setEnabled(False)
+                combo.setCurrentIndex(0)  # reset to 'none'
+            else:
+                combo.setEnabled(True)
+
+    def _on_ok(self):
+        by_cols = [col for col, cb in self._by_checks.items() if cb.isChecked()]
+        if not by_cols:
+            QMessageBox.warning(self, 'Thiếu cột nhóm', 'Chọn ít nhất 1 cột để nhóm (Group by).')
+            return
+        agg = {col: combo.currentData()
+               for col, combo in self._agg_combos.items()
+               if not self._by_checks[col].isChecked() and combo.currentData() != 'none'}
+        if not agg:
+            QMessageBox.warning(self, 'Thiếu Aggregation', 'Chọn ít nhất 1 cột với hàm tổng hợp (không phải "bỏ qua").')
+            return
+        self.accept()
+
+    def get_step(self):
+        by_cols = [col for col, cb in self._by_checks.items() if cb.isChecked()]
+        agg = {col: combo.currentData()
+               for col, combo in self._agg_combos.items()
+               if not self._by_checks[col].isChecked() and combo.currentData() != 'none'}
+        return {
+            'operation': 'group_rows',
+            'params': {'by': by_cols, 'aggregations': agg},
+        }

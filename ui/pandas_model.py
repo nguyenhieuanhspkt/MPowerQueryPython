@@ -32,6 +32,37 @@ def _fmt_cell(s: str, decimal: str = ',') -> str:
         return s
 
 
+def _add_thousands(s: str, decimal: str = ',') -> str:
+    """Add thousands separator to an already decimal-formatted number string.
+
+    decimal=',' → VN style (thousands='.', decimal=','):  185000 → "185.000"
+    decimal='.' → intl style (thousands=',', decimal='.'):  185000 → "185,000"
+    Falls back to the original string on any parse error.
+    """
+    if not s:
+        return s
+    dec_sep  = ',' if decimal == ',' else '.'
+    thou_sep = '.' if decimal == ',' else ','
+
+    if dec_sep in s:
+        int_part, dec_part = s.split(dec_sep, 1)
+        neg    = int_part.startswith('-')
+        digits = int_part.lstrip('-')
+        try:
+            formatted = f'{int(digits):,}'.replace(',', thou_sep)
+            return ('-' if neg else '') + formatted + dec_sep + dec_part
+        except ValueError:
+            return s
+    else:
+        neg    = s.startswith('-')
+        digits = s.lstrip('-')
+        try:
+            formatted = f'{int(digits):,}'.replace(',', thou_sep)
+            return ('-' if neg else '') + formatted
+        except ValueError:
+            return s
+
+
 # ---------------------------------------------------------------------------
 # Table model
 # ---------------------------------------------------------------------------
@@ -84,7 +115,10 @@ class PandasModel(QAbstractTableModel):
             val = self._df.iloc[index.row(), index.column()]
             if pd.isna(val):
                 return ''
-            return _fmt_cell(str(val), self._decimal)
+            s = _fmt_cell(str(val), self._decimal)
+            if self._type_hints.get(index.column()) == 'numeric':
+                s = _add_thousands(s, self._decimal)
+            return s
         if role == Qt.TextAlignmentRole:
             return Qt.AlignVCenter | Qt.AlignLeft
         return QVariant()
@@ -112,11 +146,12 @@ class SelectableHeaderView(QHeaderView):
     - Right-click context menu: filter shortcuts, rename, cast type, drop/keep
     """
 
-    sig_drop_columns    = pyqtSignal(list)   # list of col names → drop them
-    sig_filter_column   = pyqtSignal(str)    # col name → open FilterDialog
-    sig_filter_not_empty = pyqtSignal(str)   # col name → add is_not_empty filter step
-    sig_rename_column   = pyqtSignal(str)    # col name → open RenameColumnDialog
-    sig_cast_column     = pyqtSignal(str, str)  # col name, to_type ('numeric'/'text')
+    sig_drop_columns     = pyqtSignal(list)       # list of col names → drop them
+    sig_filter_column    = pyqtSignal(str)        # col name → open FilterDialog
+    sig_filter_not_empty = pyqtSignal(str)        # col name → add is_not_empty filter step
+    sig_rename_column    = pyqtSignal(str)        # col name → open RenameColumnDialog
+    sig_cast_column      = pyqtSignal(str, str)   # col name, to_type ('numeric'/'text')
+    sig_selection_changed = pyqtSignal(list)      # list of selected col indices
 
     _ICON_W = 22    # px: filter icon zone (right edge)
     _TYPE_W = 30    # px: type badge zone (just left of filter icon)
@@ -129,6 +164,7 @@ class SelectableHeaderView(QHeaderView):
     def __init__(self, parent=None):
         super().__init__(Qt.Horizontal, parent)
         self._selected: set = set()
+        self._anchor: int = -1          # anchor column for shift-range selection
         self._filtered_col_names: set = set()
         self._type_hints: dict = {}
         self.setSectionsClickable(True)
@@ -140,7 +176,9 @@ class SelectableHeaderView(QHeaderView):
 
     def clear_selection(self):
         self._selected.clear()
+        self._anchor = -1
         self._repaint_all()
+        self.sig_selection_changed.emit([])
 
     def set_active_filters(self, col_names: set):
         self._filtered_col_names = col_names
@@ -154,14 +192,29 @@ class SelectableHeaderView(QHeaderView):
 
     def _on_section_clicked(self, logical_index: int):
         mods = QApplication.keyboardModifiers()
-        if mods & Qt.ControlModifier:
+        ctrl  = bool(mods & Qt.ControlModifier)
+        shift = bool(mods & Qt.ShiftModifier)
+
+        if shift and self._anchor >= 0:
+            lo, hi = min(self._anchor, logical_index), max(self._anchor, logical_index)
+            rang = set(range(lo, hi + 1))
+            if ctrl:
+                self._selected |= rang      # Ctrl+Shift: thêm vùng vào selection hiện tại
+            else:
+                self._selected = rang       # Shift: thay selection bằng vùng mới
+            # anchor không đổi khi shift-click
+        elif ctrl:
             if logical_index in self._selected:
                 self._selected.discard(logical_index)
             else:
                 self._selected.add(logical_index)
+            self._anchor = logical_index
         else:
             self._selected = {logical_index}
+            self._anchor = logical_index
+
         self._repaint_all()
+        self.sig_selection_changed.emit(list(self._selected))
 
     def _repaint_all(self):
         self.viewport().update()

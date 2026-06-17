@@ -109,5 +109,15 @@ class Recipe:
                 else:
                     lines.append(f"df['{col}'] = df['{col}'].astype(str)")
 
+            elif op == 'group_rows':
+                by_cols = p.get('by', [])
+                agg_dict = p.get('aggregations', {})
+                by_str = repr(by_cols)
+                agg_str = repr(agg_dict)
+                if agg_dict:
+                    lines.append(f"df = df.groupby({by_str}, as_index=False, dropna=False).agg({agg_str}).reset_index(drop=True)")
+                else:
+                    lines.append(f"df = df[{by_str}].drop_duplicates().reset_index(drop=True)")
+
         lines += ['', "# df.to_csv('output.csv', index=False, encoding='utf-8-sig')"]
         return '\n'.join(lines)

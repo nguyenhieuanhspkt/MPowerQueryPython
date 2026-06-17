@@ -1,0 +1,219 @@
+================================================================================
+  HUONG DAN SU DUNG MPOWERQUERYPYTHON
+  (Ghi chu nhanh cho cac tinh nang kho nho)
+================================================================================
+
+Phan mem: MPowerQueryPython
+Muc dich: Xu ly du lieu CSV / Excel khong can viet code (no-code)
+Chay: python main.py
+
+--------------------------------------------------------------------------------
+MUC LUC
+  1. Mo file du lieu
+  2. Cac thao tac co ban (Filter, Sort, Drop...)
+  3. GROUP ROWS (tong hop / nhom du lieu)  *** PHAN QUAN TRONG NHAT ***
+  4. Cast Type (doi kieu du lieu)
+  5. Pipeline va Recipe
+  6. Phim tat
+  7. Xuat du lieu
+  8. Cac luu y ve so lieu Viet Nam
+--------------------------------------------------------------------------------
+
+
+1. MO FILE DU LIEU
+==================
+  - File > Open  hoac  Ctrl+O
+  - Ho tro: .csv, .xlsx, .xls
+  - CSV: se hoi ky tu phan cach (;  hoac  ,  hoac Tab) va dau thap phan
+  - Excel nhieu sheet: se hien hop chon sheet
+
+
+2. CAC THAO TAC CO BAN
+======================
+
+  FILTER (loc dong)
+    Menu: Transform > Filter Rows
+    - Chon cot, chon dieu kien, nhap gia tri
+    - Cot da filter se hien mui ten xanh (V) tren header
+    - Dieu kien so: greater_than / less_than / ... (can nhap so dung dinh dang)
+
+  DROP COLUMNS (xoa cot)
+    Menu: Transform > Drop Columns
+    - Tich chon cac cot can xoa > Drop Selected
+    - Cach nhanh: Ctrl+click nhieu cot tren header > chuot phai > Drop Selected
+
+  DROP DUPLICATES (xoa trung lap)
+    Menu: Transform > Drop Duplicates
+    - Khong can cau hinh, ap dung ngay
+
+  SORT (sap xep)
+    Menu: Transform > Sort Rows
+    - Chon cot va chieu (Tang dan / Giam dan)
+
+  FILL NA (dien gia tri trong)
+    Menu: Transform > Fill NA
+    - Chon cot cu the hoac "(all columns)"
+    - Nhap gia tri de dien vao o trong (vi du: 0, N/A, Khong co)
+
+  RENAME COLUMN (doi ten cot)
+    Menu: Transform > Rename Column
+    - Cach nhanh: chuot phai vao header cot > Rename
+
+  REMOVE TOP ROWS (xoa dong dau)
+    Menu: Transform > Remove Top Rows
+    - Nhap so dong muon bo tu tren xuong
+
+  USE FIRST ROW AS HEADER (dong 1 lam ten cot)
+    Menu: Transform > Use First Row as Header
+    - Dung khi file co dong tieu de nam trong data, khong phai header that su
+
+
+--------------------------------------------------------------------------------
+3. GROUP ROWS (NHOM VA TONG HOP DU LIEU)
+=========================================
+
+  Day la tinh nang phuc tap nhat - tuong tu GROUP BY trong SQL
+  hoac "Group By" trong Power Query cua Excel.
+
+  MUC DICH:
+    Nhom cac dong co cung gia tri theo 1 hoac nhieu cot,
+    sau do tinh toan (dem, cong, trung binh...) cho cac cot con lai.
+
+  Vi du thuc te:
+    Du lieu goc:
+      Tinh       | San pham   | Doanh thu | So don
+      ------------|------------|-----------|-------
+      Ha Noi      | Ao         | 500000    | 10
+      Ha Noi      | Quan       | 300000    | 6
+      TP HCM      | Ao         | 800000    | 15
+      TP HCM      | Ao         | 200000    | 4
+
+    Group by "Tinh", aggregate "Doanh thu"=Sum, "So don"=Count:
+      Tinh       | Doanh thu | So don
+      ------------|-----------|-------
+      Ha Noi      | 800000    | 2
+      TP HCM      | 1000000   | 2
+
+  CACH DUNG:
+    Buoc 1: Menu Transform > Group Rows...
+            (hoac nut "Group" tren thanh cong cu)
+
+    Buoc 2: Phan "Group by" (o tren)
+            - Tich chon cot(s) de NHOM
+            - Co the chon nhieu cot (vi du: ca Tinh va Nam)
+            - Cot nao chon o day se KHONG xuat hien trong phan Aggregate
+
+    Buoc 3: Phan "Aggregate" (o duoi)
+            - Moi cot con lai co 1 o chon ham:
+              -- (bo qua)  : khong giu cot nay trong ket qua
+              Count        : dem so dong trong moi nhom
+              Sum          : cong cac gia tri so
+              Mean         : tinh trung binh cong
+              Min          : gia tri nho nhat
+              Max          : gia tri lon nhat
+              First        : lay gia tri dau tien trong nhom
+              Last         : lay gia tri cuoi cung trong nhom
+            - Cot da chon Group by se tu dong bi vo hieu hoa o day
+
+    Buoc 4: Bam "Apply Group"
+
+  LUU Y QUAN TRONG:
+    - Phai chon it nhat 1 cot Group by
+    - Phai chon it nhat 1 cot Aggregate (khac "bo qua")
+    - Sum / Mean / Min / Max: nen dung voi cot so lieu
+      (neu cot la chu, ket qua co the la NaN hoac khong co nghia)
+    - Count dem so dong trong nhom, dung duoc cho moi loai cot
+    - Cac cot khong chon Group by va de "bo qua" se bi XOA khoi ket qua
+    - De hoan tac: nut "Undo" hoac Ctrl+Z
+
+  SAU KHI GROUP:
+    - So dong thuong giam di rat nhieu (du lieu da duoc tom gon)
+    - Co the tiep tuc Filter / Sort tren ket qua
+    - "View Pandas Code" se hien lenh groupby tuong duong
+
+
+--------------------------------------------------------------------------------
+4. CAST TYPE (DOI KIEU DU LIEU)
+=================================
+
+  Cach nhanh nhat: chuot phai vao header cot > Cast to Number  hoac  Cast to Text
+  Hoac xem badge "123" / "ABC" tren header de biet kieu hien tai.
+
+  - Cast to Number (123): chuyen chuoi sang so de tinh toan
+  - Cast to Text (ABC):   chuyen so sang chuoi (them chu 0 dang truoc...)
+
+  Khi nao can:
+    - Cot so bi doc la chu -> Sum/Mean bi loi -> Cast to Number truoc
+    - Muon giu so 0 dang truoc (ma don hang, so dien thoai) -> Cast to Text
+
+
+--------------------------------------------------------------------------------
+5. PIPELINE VA RECIPE
+======================
+
+  PIPELINE (danh sach buoc xu ly):
+    - Hien thi ben trai man hinh
+    - Moi buoc co mau sac rieng de de nhan biet
+    - Bam Undo xoa buoc cuoi cung
+    - Bam Reset quay ve du lieu goc (xac nhan truoc)
+
+  RECIPE (luu pipeline):
+    - File > Save Recipe  (Ctrl+S): luu thanh file .json
+    - File > Load Recipe  (Ctrl+R): tai lai va ap dung pipeline cu
+    - Dung khi phai xu ly cung 1 dinh dang file hang thang
+    - Recipe luu vao thu muc config/ theo mac dinh
+
+  VIEW PANDAS CODE:
+    - Nut "View Code" hoac menu View > View Pandas Code
+    - Hien lenh Python/Pandas tuong duong voi pipeline hien tai
+    - Co the copy va chay trong Jupyter / script rieng
+
+
+--------------------------------------------------------------------------------
+6. PHIM TAT
+===========
+
+  Ctrl+O    Mo file
+  Ctrl+E    Xuat du lieu
+  Ctrl+S    Luu Recipe
+  Ctrl+R    Tai Recipe
+  Ctrl+Z    Undo buoc cuoi
+
+  Tren header cot:
+    Ctrl+Click        Chon nhieu cot cung luc
+    Click bieu tuong V (xanh/trang)   Mo FilterDialog cho cot do
+    Chuot phai        Menu: Drop / Keep / Filter / Rename / Cast
+
+
+--------------------------------------------------------------------------------
+7. XUAT DU LIEU
+================
+
+  File > Export  hoac  Ctrl+E
+  - CSV: luu UTF-8 co BOM (mo duoc trong Excel VN)
+  - Excel (.xlsx): so lieu duoc chuyen dung kieu (khong bi "Number Stored as Text")
+  - Dau thap phan trong CSV theo cai dat luc mo file (phay hoac cham)
+
+
+--------------------------------------------------------------------------------
+8. LUU Y VE SO LIEU VIET NAM
+==============================
+
+  Dau thap phan:
+    - Viet Nam dung phay:  1.500,75  (1500 phay 75)
+    - Quoc te dung cham:   1,500.75  (1500 cham 75)
+    - Khi mo CSV chon dung "Dau thap phan" de phan mem doc dung
+
+  So co dau cham ngan (vi du: 1.500):
+    - Neu decimal=phay -> 1.500 duoc hieu la 1500 (nghìn)
+    - Neu decimal=cham -> 1.500 duoc hieu la 1.5
+
+  Hien thi:
+    - Phan mem tu dong sua "1500.0" -> "1.500" (dang Viet Nam)
+    - Badge "123" tren header neu cot la so, "ABC" neu la chu
+
+
+================================================================================
+  Cap nhat lan cuoi: 2026-06-17
+  Lien he / bao loi: hieunavt4mail@gmail.com
+================================================================================
