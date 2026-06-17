@@ -1,0 +1,93 @@
+{
+  "name": "Quyet toan Trung tu S1 VT4 2025_Phan DC.xlsx [PL2.5 DT vat tu DC ]",
+  "steps": [
+    {
+      "operation": "remove_top_rows",
+      "params": {
+        "n": 3
+      }
+    },
+    {
+      "operation": "use_first_row_as_header",
+      "params": {}
+    },
+    {
+      "operation": "use_first_row_as_header",
+      "params": {}
+    },
+    {
+      "operation": "use_first_row_as_header",
+      "params": {}
+    },
+    {
+      "operation": "filter",
+      "params": {
+        "column": "17",
+        "condition": "is_not_empty",
+        "value": ""
+      }
+    },
+    {
+      "operation": "drop_columns",
+      "params": {
+        "columns": [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5",
+          "6",
+          "7",
+          "8",
+          "9",
+          "10",
+          "11",
+          "12",
+          "13",
+          "14",
+          "15",
+          "16",
+          "25",
+          "nan"
+        ]
+      }
+    },
+    {
+      "operation": "filter",
+      "params": {
+        "column": "18",
+        "condition": "not_equals",
+        "value": "0"
+      }
+    },
+    {
+      "operation": "filter",
+      "params": {
+        "column": "24",
+        "condition": "not_equals",
+        "value": "0"
+      }
+    },
+    {
+      "operation": "rename_column",
+      "params": {
+        "old_name": "24",
+        "new_name": "Thành Tiền"
+      }
+    },
+    {
+      "operation": "rename_column",
+      "params": {
+        "old_name": "23",
+        "new_name": "Đơn giá"
+      }
+    },
+    {
+      "operation": "rename_column",
+      "params": {
+        "old_name": "22",
+        "new_name": "Số lượng"
+      }
+    }
+  ]
+}

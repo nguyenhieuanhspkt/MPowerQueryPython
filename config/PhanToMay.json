@@ -1,0 +1,128 @@
+{
+  "name": "09062026.DU THAO SO LIEU KIEM TOAN - TO MAY.xlsx [3.7.1-VTC TM]",
+  "steps": [
+    {
+      "operation": "filter",
+      "params": {
+        "column": "Unnamed: 28",
+        "condition": "is_not_empty",
+        "value": ""
+      }
+    },
+    {
+      "operation": "filter",
+      "params": {
+        "column": "Unnamed: 27",
+        "condition": "is_not_empty",
+        "value": ""
+      }
+    },
+    {
+      "operation": "filter",
+      "params": {
+        "column": "Unnamed: 19",
+        "condition": "is_not_empty",
+        "value": ""
+      }
+    },
+    {
+      "operation": "rename_column",
+      "params": {
+        "old_name": "Unnamed: 28",
+        "new_name": "Thành tiền"
+      }
+    },
+    {
+      "operation": "rename_column",
+      "params": {
+        "old_name": "Unnamed: 27",
+        "new_name": "Đơn giá"
+      }
+    },
+    {
+      "operation": "rename_column",
+      "params": {
+        "old_name": "Unnamed: 26",
+        "new_name": "Khối lượng"
+      }
+    },
+    {
+      "operation": "drop_columns",
+      "params": {
+        "columns": [
+          "Unnamed: 0",
+          "PHỤ LỤC 3.7",
+          "Unnamed: 2",
+          "Unnamed: 3",
+          "Unnamed: 4",
+          "Unnamed: 5",
+          "Unnamed: 6",
+          "Unnamed: 7",
+          "Unnamed: 8",
+          "Unnamed: 9",
+          "Unnamed: 10",
+          "Unnamed: 11",
+          "Unnamed: 12",
+          "Unnamed: 13",
+          "Unnamed: 14",
+          "Unnamed: 15",
+          "Unnamed: 16",
+          "Unnamed: 17",
+          "Unnamed: 21",
+          "Unnamed: 22",
+          "Unnamed: 23",
+          "Unnamed: 24",
+          "Unnamed: 25",
+          "Unnamed: 29",
+          "Unnamed: 30",
+          "Unnamed: 31",
+          "Unnamed: 32",
+          "Unnamed: 33",
+          "Unnamed: 34",
+          "Unnamed: 35",
+          "Unnamed: 36",
+          "Unnamed: 37",
+          "Unnamed: 38",
+          "Unnamed: 39",
+          "Unnamed: 40",
+          "Unnamed: 41",
+          "Unnamed: 42",
+          "Unnamed: 43"
+        ]
+      }
+    },
+    {
+      "operation": "remove_top_rows",
+      "params": {
+        "n": 1
+      }
+    },
+    {
+      "operation": "add_index_column",
+      "params": {
+        "col_name": "STT"
+      }
+    },
+    {
+      "operation": "rename_column",
+      "params": {
+        "old_name": "Unnamed: 18",
+        "new_name": "MaVatTu"
+      }
+    },
+    {
+      "operation": "rename_column",
+      "params": {
+        "old_name": "Unnamed: 19",
+        "new_name": "Tên VT"
+      }
+    },
+    {
+      "operation": "rename_column",
+      "params": {
+        "old_name": "Unnamed: 20",
+        "new_name": "DVT"
+      }
+    }
+  ]
+}

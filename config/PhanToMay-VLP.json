@@ -1,0 +1,110 @@
+{
+  "name": "09062026.DU THAO SO LIEU KIEM TOAN - TO MAY.xlsx [3.8-VLP TM]",
+  "steps": [
+    {
+      "operation": "rename_column",
+      "params": {
+        "old_name": "Unnamed: 1",
+        "new_name": "Giấy ĐNXK"
+      }
+    },
+    {
+      "operation": "rename_column",
+      "params": {
+        "old_name": "Unnamed: 2",
+        "new_name": "Mã Vật tư"
+      }
+    },
+    {
+      "operation": "rename_column",
+      "params": {
+        "old_name": "Unnamed: 3",
+        "new_name": "Tên VT"
+      }
+    },
+    {
+      "operation": "rename_column",
+      "params": {
+        "old_name": "Unnamed: 4",
+        "new_name": "ĐVT"
+      }
+    },
+    {
+      "operation": "rename_column",
+      "params": {
+        "old_name": "Unnamed: 5",
+        "new_name": "Số lượng xuất kho"
+      }
+    },
+    {
+      "operation": "rename_column",
+      "params": {
+        "old_name": "Unnamed: 7",
+        "new_name": "Đơn giá"
+      }
+    },
+    {
+      "operation": "rename_column",
+      "params": {
+        "old_name": "Unnamed: 8",
+        "new_name": "Thành tiền"
+      }
+    },
+    {
+      "operation": "rename_column",
+      "params": {
+        "old_name": "Unnamed: 10",
+        "new_name": "Ghi chú"
+      }
+    },
+    {
+      "operation": "remove_top_rows",
+      "params": {
+        "n": 5
+      }
+    },
+    {
+      "operation": "drop_columns",
+      "params": {
+        "columns": [
+          "PHỤ LỤC 3.8:",
+          "Unnamed: 6",
+          "Đơn giá",
+          "Thành tiền",
+          "Unnamed: 9",
+          "Ghi chú",
+          "Unnamed: 11",
+          "Unnamed: 12",
+          "Unnamed: 13",
+          "Unnamed: 14",
+          "Unnamed: 15",
+          "Unnamed: 18",
+          "Unnamed: 19",
+          "Unnamed: 20"
+        ]
+      }
+    },
+    {
+      "operation": "rename_column",
+      "params": {
+        "old_name": "Unnamed: 16",
+        "new_name": "Đơn giá"
+      }
+    },
+    {
+      "operation": "rename_column",
+      "params": {
+        "old_name": "Unnamed: 17",
+        "new_name": "Thành tiền"
+      }
+    },
+    {
+      "operation": "filter",
+      "params": {
+        "column": "Đơn giá",
+        "condition": "is_not_empty",
+        "value": ""
+      }
+    }
+  ]
+}

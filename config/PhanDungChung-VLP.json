@@ -1,0 +1,62 @@
+{
+  "name": "Quyet toan Trung tu S1 VT4 2025_Phan DC.xlsx [VLP DC]",
+  "steps": [
+    {
+      "operation": "filter",
+      "params": {
+        "column": "Unnamed: 7",
+        "condition": "is_not_empty",
+        "value": ""
+      }
+    },
+    {
+      "operation": "rename_column",
+      "params": {
+        "old_name": "Unnamed: 7",
+        "new_name": "Thành tiền"
+      }
+    },
+    {
+      "operation": "rename_column",
+      "params": {
+        "old_name": "Unnamed: 6",
+        "new_name": "Đơn giá"
+      }
+    },
+    {
+      "operation": "rename_column",
+      "params": {
+        "old_name": "Unnamed: 5",
+        "new_name": "Số lượng"
+      }
+    },
+    {
+      "operation": "use_first_row_as_header",
+      "params": {}
+    },
+    {
+      "operation": "drop_columns",
+      "params": {
+        "columns": [
+          "Nguồn gốc mua sắm"
+        ]
+      }
+    },
+    {
+      "operation": "drop_columns",
+      "params": {
+        "columns": [
+          "Ghi chú"
+        ]
+      }
+    },
+    {
+      "operation": "filter",
+      "params": {
+        "column": "Số lượng",
+        "condition": "is_not_empty",
+        "value": ""
+      }
+    }
+  ]
+}
