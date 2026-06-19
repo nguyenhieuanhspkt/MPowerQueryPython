@@ -3,6 +3,7 @@ from typing import List, Dict, Any, Optional
 
 from core.utils import to_numeric_vn, parse_number, detect_csv_sep
 
+
 _OP_LABELS = {
     'filter':                  'Filter',
     'drop_columns':            'Drop Columns',
@@ -19,6 +20,7 @@ _OP_LABELS = {
     'expand_hierarchy':        'Expand Hierarchy',
     'semantic_filter':         'AI Semantic Filter',
     'semantic_dedup':          'AI Fuzzy Dedup',
+    'split_column':            'Split Column',
 }
 
 
@@ -125,7 +127,7 @@ class DataEngine:
                     self._current.iloc[:, col_ix].astype(str), decimal=self._decimal)
             elif to_type == 'date':
                 self._current.iloc[:, col_ix] = pd.to_datetime(
-                    self._current.iloc[:, col_ix].astype(str), dayfirst=True, errors='coerce')
+                    self._current.iloc[:, col_ix].astype(str), errors='coerce')
             else:  # 'text'
                 series = self._current.iloc[:, col_ix]
                 if series.dtype.kind == 'M':  # datetime64 → format as dd/mm/yyyy
@@ -360,6 +362,33 @@ class DataEngine:
                 else:
                     keep = [c for c in by_cols if c in df.columns]
                     self._current = df[keep].drop_duplicates().reset_index(drop=True)
+
+        elif op == 'split_column':
+            col = params.get('column', '')
+            delimiter = params.get('delimiter', '')
+            part_index = params.get('part_index', 0)
+            new_col_name = params.get('new_col_name', '')
+            col_positions = [i for i, c in enumerate(self._current.columns) if c == col]
+            if not col_positions:
+                raise ValueError(f'Cột "{col}" không tồn tại trong dữ liệu hiện tại.')
+            if not delimiter:
+                raise ValueError('Delimiter không được để trống.')
+            col_ix = col_positions[0]
+
+            def _split_extract(s):
+                parts = str(s).split(delimiter)
+                try:
+                    return parts[part_index].strip()
+                except IndexError:
+                    return str(s)
+
+            extracted = self._current.iloc[:, col_ix].apply(_split_extract)
+            if new_col_name:
+                actual = self._unique_col_name(new_col_name, [])
+                params['new_col_name'] = actual
+                self._current.insert(col_ix + 1, actual, extracted)
+            else:
+                self._current.iloc[:, col_ix] = extracted
 
         return self._current
 

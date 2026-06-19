@@ -2016,3 +2016,156 @@ class CrossFileMatchDialog(QDialog):
 
     def get_result_name(self):
         return self._result_name
+
+
+# ---------------------------------------------------------------------------
+# Split Column dialog
+# ---------------------------------------------------------------------------
+
+class SplitColumnDialog(QDialog):
+    """Split a column by a delimiter and extract one part (or put into a new column)."""
+
+    _PRESETS = [(' - ', ' - '), (' | ', ' | '), (', ', ', '), (';', ';'), ('/', '/')]
+
+    def __init__(self, df, columns, parent=None, preselect=None):
+        super().__init__(parent)
+        self.setWindowTitle('Split Column by Delimiter')
+        self.setMinimumWidth(540)
+        self.setStyleSheet(DIALOG_STYLE)
+        self._df = df
+
+        lay = QVBoxLayout(self)
+        lay.setSpacing(10)
+
+        # ── Column picker ──────────────────────────────────────────────────
+        form = QFormLayout()
+        form.setLabelAlignment(Qt.AlignRight)
+        form.setSpacing(8)
+        self._col_combo = QComboBox()
+        self._col_combo.addItems(columns)
+        if preselect and preselect in columns:
+            self._col_combo.setCurrentIndex(columns.index(preselect))
+        form.addRow('Column:', self._col_combo)
+        lay.addLayout(form)
+
+        # ── Delimiter ──────────────────────────────────────────────────────
+        delim_grp = QGroupBox('Delimiter')
+        dlay = QVBoxLayout(delim_grp)
+        dlay.setSpacing(6)
+
+        preset_row = QHBoxLayout()
+        preset_row.setSpacing(4)
+        for label, value in self._PRESETS:
+            btn = QPushButton(repr(label))
+            btn.setFixedHeight(26)
+            btn.setStyleSheet(
+                'QPushButton { font-size: 11px; padding: 2px 10px; min-width: 40px; }'
+                'QPushButton:hover { background: #D0E8FF; }'
+            )
+            btn.clicked.connect(lambda _, v=value: self._set_delim(v))
+            preset_row.addWidget(btn)
+        preset_row.addStretch()
+        dlay.addLayout(preset_row)
+
+        custom_row = QHBoxLayout()
+        custom_row.addWidget(QLabel('Custom:'))
+        self._delim_edit = QLineEdit(' - ')
+        self._delim_edit.setPlaceholderText('Nhập delimiter...')
+        custom_row.addWidget(self._delim_edit)
+        dlay.addLayout(custom_row)
+        lay.addWidget(delim_grp)
+
+        # ── Extract options ────────────────────────────────────────────────
+        form2 = QFormLayout()
+        form2.setLabelAlignment(Qt.AlignRight)
+        form2.setSpacing(8)
+
+        self._part_spin = QSpinBox()
+        self._part_spin.setRange(-20, 50)
+        self._part_spin.setValue(0)
+        self._part_spin.setToolTip('0=phần đầu tiên, 1=thứ hai, -1=phần cuối cùng')
+        form2.addRow('Lấy phần thứ:', self._part_spin)
+
+        self._new_col_edit = QLineEdit()
+        self._new_col_edit.setPlaceholderText('(để trống = ghi đè cột gốc)')
+        form2.addRow('Tên cột kết quả:', self._new_col_edit)
+        lay.addLayout(form2)
+
+        # ── Preview ────────────────────────────────────────────────────────
+        prev_hdr = QHBoxLayout()
+        prev_hdr.addWidget(QLabel('Preview (5 dòng đầu):'))
+        prev_hdr.addStretch()
+        btn_prev = QPushButton('Preview')
+        btn_prev.setObjectName('btn_cancel')
+        btn_prev.setFixedHeight(26)
+        btn_prev.clicked.connect(self._do_preview)
+        prev_hdr.addWidget(btn_prev)
+        lay.addLayout(prev_hdr)
+
+        self._preview_tbl = QTableWidget(0, 2)
+        self._preview_tbl.setHorizontalHeaderLabels(['Giá trị gốc', 'Kết quả'])
+        self._preview_tbl.horizontalHeader().setStretchLastSection(True)
+        self._preview_tbl.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self._preview_tbl.setFixedHeight(148)
+        self._preview_tbl.verticalHeader().setDefaultSectionSize(22)
+        lay.addWidget(self._preview_tbl)
+
+        btn_widget, ok_btn, cancel_btn = _button_row('Apply Split')
+        ok_btn.clicked.connect(self._on_ok)
+        cancel_btn.clicked.connect(self.reject)
+        lay.addWidget(btn_widget)
+
+        # Auto-preview on change
+        self._col_combo.currentIndexChanged.connect(self._do_preview)
+        self._delim_edit.textChanged.connect(self._do_preview)
+        self._part_spin.valueChanged.connect(self._do_preview)
+        self._do_preview()
+
+    def _set_delim(self, value):
+        self._delim_edit.setText(value)
+
+    def _extract_one(self, s):
+        delim = self._delim_edit.text()
+        idx = self._part_spin.value()
+        if not delim:
+            return str(s)
+        parts = str(s).split(delim)
+        try:
+            return parts[idx].strip()
+        except IndexError:
+            return str(s)
+
+    def _do_preview(self):
+        col = self._col_combo.currentText()
+        df = self._df
+        if col not in df.columns:
+            return
+        sample = df[col].dropna().head(5)
+        self._preview_tbl.setRowCount(len(sample))
+        for i, val in enumerate(sample):
+            orig = str(val)
+            result = self._extract_one(orig)
+            item_orig = QTableWidgetItem(orig)
+            item_orig.setToolTip(orig)
+            item_res = QTableWidgetItem(result)
+            item_res.setToolTip(result)
+            self._preview_tbl.setItem(i, 0, item_orig)
+            self._preview_tbl.setItem(i, 1, item_res)
+        self._preview_tbl.resizeColumnToContents(0)
+
+    def _on_ok(self):
+        if not self._delim_edit.text():
+            QMessageBox.warning(self, 'Thiếu Delimiter', 'Nhập delimiter trước.')
+            return
+        self.accept()
+
+    def get_step(self):
+        return {
+            'operation': 'split_column',
+            'params': {
+                'column':       self._col_combo.currentText(),
+                'delimiter':    self._delim_edit.text(),
+                'part_index':   self._part_spin.value(),
+                'new_col_name': self._new_col_edit.text().strip(),
+            }
+        }

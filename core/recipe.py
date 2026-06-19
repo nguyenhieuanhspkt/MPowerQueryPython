@@ -177,6 +177,22 @@ class Recipe:
                 else:
                     lines.append('df = df[[k != "skip" for k in _rk2]].reset_index(drop=True)')
 
+            elif op == 'split_column':
+                col = p.get('column', '')
+                delimiter = p.get('delimiter', '')
+                idx = p.get('part_index', 0)
+                new_col = p.get('new_col_name', '')
+                extract_expr = (
+                    f"df['{col}'].astype(str).str.split({repr(delimiter)})"
+                    f".apply(lambda x: x[{idx}].strip() if abs({idx}) < len(x) else x[-1 if {idx} < 0 else 0].strip())"
+                )
+                if new_col:
+                    lines.append(
+                        f"df.insert(df.columns.get_loc('{col}') + 1, '{new_col}', {extract_expr})"
+                    )
+                else:
+                    lines.append(f"df['{col}'] = {extract_expr}")
+
             elif op == 'semantic_filter':
                 col = p.get('column')
                 query = p.get('query', '')

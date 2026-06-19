@@ -3,8 +3,8 @@ import pandas as pd
 from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QSplitter,
     QTableView, QListWidget, QListWidgetItem, QLabel, QPushButton,
-    QToolBar, QAction, QFileDialog, QStatusBar, QMessageBox,
-    QFrame, QAbstractItemView, QSizePolicy, QInputDialog,
+    QToolBar, QToolButton, QAction, QFileDialog, QStatusBar, QMessageBox,
+    QFrame, QLineEdit, QAbstractItemView, QSizePolicy, QInputDialog,
     QStyledItemDelegate, QStyle,
 )
 from PyQt5.QtCore import Qt, QSize, QRect, QEvent
@@ -26,6 +26,7 @@ from ui.transform_dialogs import (
     FuzzyDedupDialog, CrossFileMatchDialog,
     FlattenHierarchyDialog,
     ExpandHierarchyDialog,
+    SplitColumnDialog,
 )
 
 def _fmt_agg(value: float, decimal: str = ',') -> str:
@@ -61,6 +62,7 @@ _STEP_META = {
     'expand_hierarchy':      ('Expand Hierarchy',      '#0D9488'),
     'semantic_filter':       ('AI Semantic Filter',    '#7C3AED'),
     'semantic_dedup':        ('AI Fuzzy Dedup',        '#9333EA'),
+    'split_column':          ('Split Column',          '#0EA5E9'),
 }
 
 
@@ -192,6 +194,7 @@ class MainWindow(QMainWindow):
         tm.addAction('Group Rows...', self._add_group_rows)
         tm.addAction('Flatten Hierarchy...', self._add_flatten_hierarchy)
         tm.addAction('Expand Hierarchy...', self._add_expand_hierarchy)
+        tm.addAction('Split Column...', self._add_split_column)
         tm.addSeparator()
         tm.addAction('AI Semantic Filter...', self._add_semantic_filter)
         tm.addAction('AI Fuzzy Dedup...', self._add_fuzzy_dedup)
@@ -203,53 +206,96 @@ class MainWindow(QMainWindow):
 
     def _create_toolbar(self):
         tb = self.addToolBar('Main')
-        tb.setIconSize(QSize(18, 18))
         tb.setMovable(False)
         tb.setObjectName('main_toolbar')
-        tb.setToolButtonStyle(Qt.ToolButtonTextOnly)
 
-        def act(label, tip, slot):
+        def mkact(label, tip, slot, shortcut=None):
             a = QAction(label, self)
             a.setToolTip(tip)
             a.triggered.connect(slot)
-            tb.addAction(a)
+            if shortcut:
+                a.setShortcut(shortcut)
             return a
 
-        act('Add Query', 'Add Query from File  (Ctrl+Shift+O)', self._add_file_query)
-        self._act_export      = act('Export',      'Export active query  (Ctrl+E)',      self._export_file)
-        self._act_refresh     = act('Refresh',     'Refresh source & rebuild  (Ctrl+R)', self._on_toolbar_refresh)
-        self._act_refresh.setShortcut('Ctrl+R')
-        tb.addSeparator()
-        self._act_save_recipe = act('Save Recipe', 'Save pipeline as recipe',            self._save_recipe)
-        self._act_load_recipe = act('Load Recipe', 'Load & apply recipe',                self._load_recipe)
-        tb.addSeparator()
-        self._act_filter      = act('Filter',      'Add filter step',                    self._add_filter)
-        self._act_drop_cols   = act('Drop Cols',   'Drop columns',                       self._add_drop_columns)
-        self._act_dedup       = act('Dedup',       'Drop duplicate rows',                self._add_drop_duplicates)
-        self._act_sort        = act('Sort',        'Sort rows',                          self._add_sort)
-        self._act_rename      = act('Rename',      'Rename a column',                    self._add_rename)
-        self._act_fillna      = act('Fill NA',     'Fill missing values',                self._add_fillna)
-        self._act_rm_top      = act('Rm Top',     'Remove top rows',                    self._add_remove_top_rows)
-        self._act_header      = act('Row→Header', 'Use first row as column headers',    self._add_use_first_row_as_header)
-        self._act_group       = act('Group',      'Group rows / aggregate',             self._add_group_rows)
-        self._act_flatten     = act('Flatten',    'Flatten hierarchy / denormalize',    self._add_flatten_hierarchy)
-        self._act_expand      = act('Expand',     'Expand narrow → wide hierarchy',     self._add_expand_hierarchy)
-        tb.addSeparator()
-        self._act_semantic    = act('AI Filter',  'Semantic filter bằng BGE-M3',        self._add_semantic_filter)
-        self._act_fuzzy_dedup = act('AI Dedup',   'Fuzzy dedup bằng BGE-M3',            self._add_fuzzy_dedup)
-        self._act_cross_match = act('AI Match',   'Cross-file match giữa 2 frames',     self._add_cross_match)
-        tb.addSeparator()
-        self._act_undo        = act('Undo',        'Undo last step  (Ctrl+Z)',           self._undo_step)
-        self._act_reset       = act('Reset',       'Reset to original data',             self._reset_data)
-        tb.addSeparator()
-        self._act_code        = act('View Code',   'Show generated pandas code',         self._show_code)
+        def grp(group_label, *actions):
+            """Wrap a list of QActions into a labelled group widget."""
+            container = QWidget()
+            container.setObjectName('tb_group')
+            vlay = QVBoxLayout(container)
+            vlay.setContentsMargins(4, 2, 4, 1)
+            vlay.setSpacing(1)
+
+            row = QHBoxLayout()
+            row.setSpacing(2)
+            for action in actions:
+                btn = QToolButton()
+                btn.setDefaultAction(action)
+                btn.setObjectName('tb_btn')
+                row.addWidget(btn)
+            vlay.addLayout(row)
+
+            lbl = QLabel(group_label)
+            lbl.setObjectName('tb_group_lbl')
+            lbl.setAlignment(Qt.AlignCenter)
+            vlay.addWidget(lbl)
+
+            tb.addWidget(container)
+
+            sep = QFrame()
+            sep.setFrameShape(QFrame.VLine)
+            sep.setObjectName('tb_vsep')
+            sep.setFixedWidth(1)
+            tb.addWidget(sep)
+
+        # ── build all actions ──────────────────────────────────────────────
+        act_add_query         = mkact('Add Query',    'Add Query from File  (Ctrl+Shift+O)', self._add_file_query)
+        self._act_export      = mkact('Export',       'Export  (Ctrl+E)',                   self._export_file)
+        self._act_refresh     = mkact('Refresh',      'Refresh  (Ctrl+R)',                  self._on_toolbar_refresh, 'Ctrl+R')
+
+        self._act_save_recipe = mkact('Save Recipe',  'Save pipeline as recipe',             self._save_recipe)
+        self._act_load_recipe = mkact('Load Recipe',  'Load & apply recipe',                 self._load_recipe)
+
+        self._act_drop_cols   = mkact('Drop Cols',    'Drop columns',                        self._add_drop_columns)
+        self._act_rename      = mkact('Rename',       'Rename a column',                     self._add_rename)
+        self._act_split_col   = mkact('Split Col',    'Split column by delimiter',            self._add_split_column)
+
+        self._act_filter      = mkact('Filter',       'Filter rows',                         self._add_filter)
+        self._act_dedup       = mkact('Dedup',        'Drop duplicate rows',                 self._add_drop_duplicates)
+        self._act_sort        = mkact('Sort',         'Sort rows',                           self._add_sort)
+        self._act_fillna      = mkact('Fill NA',      'Fill missing values',                 self._add_fillna)
+
+        self._act_rm_top      = mkact('Rm Top',       'Remove top rows',                     self._add_remove_top_rows)
+        self._act_header      = mkact('Row→Header',   'Use first row as column headers',     self._add_use_first_row_as_header)
+        self._act_group       = mkact('Group',        'Group rows / aggregate',              self._add_group_rows)
+
+        self._act_flatten     = mkact('Flatten',      'Flatten hierarchy',                   self._add_flatten_hierarchy)
+        self._act_expand      = mkact('Expand',       'Expand narrow/stacked hierarchy',     self._add_expand_hierarchy)
+
+        self._act_semantic    = mkact('AI Filter',    'Semantic filter (BGE-M3)',             self._add_semantic_filter)
+        self._act_fuzzy_dedup = mkact('AI Dedup',     'Fuzzy dedup (BGE-M3)',                self._add_fuzzy_dedup)
+        self._act_cross_match = mkact('AI Match',     'Cross-file match',                    self._add_cross_match)
+
+        self._act_undo        = mkact('Undo',         'Undo last step  (Ctrl+Z)',            self._undo_step)
+        self._act_reset       = mkact('Reset',        'Reset to original data',              self._reset_data)
+        self._act_code        = mkact('View Code',    'Show generated pandas code',          self._show_code)
+
+        # ── arrange into groups ────────────────────────────────────────────
+        grp('Query',     act_add_query)
+        grp('Project',   self._act_export,    self._act_refresh)
+        grp('Recipe',    self._act_save_recipe, self._act_load_recipe)
+        grp('Columns',   self._act_drop_cols, self._act_rename,  self._act_split_col)
+        grp('Transform', self._act_filter,    self._act_dedup,   self._act_sort, self._act_fillna)
+        grp('Rows',      self._act_rm_top,    self._act_header,  self._act_group)
+        grp('Hierarchy', self._act_flatten,   self._act_expand)
+        grp('AI',        self._act_semantic,  self._act_fuzzy_dedup, self._act_cross_match)
+        grp('History',   self._act_undo,      self._act_reset,   self._act_code)
 
         self._data_actions = [
             self._act_export, self._act_refresh, self._act_save_recipe,
             self._act_filter, self._act_drop_cols, self._act_dedup,
             self._act_sort, self._act_rename, self._act_fillna,
             self._act_rm_top, self._act_header, self._act_group,
-            self._act_flatten, self._act_expand,
+            self._act_flatten, self._act_expand, self._act_split_col,
             self._act_fuzzy_dedup, self._act_cross_match,
             self._act_semantic,
             self._act_undo, self._act_reset, self._act_code,
@@ -366,8 +412,30 @@ class MainWindow(QMainWindow):
 
         self._model = PandasModel()
         self._table_view.setModel(self._model)
+        self._table_view.selectionModel().currentChanged.connect(self._on_cell_selected)
         self._table_view.hide()
         lay.addWidget(self._table_view)
+
+        # Value display bar (formula bar)
+        val_bar = QFrame()
+        val_bar.setObjectName('val_bar')
+        val_bar_lay = QHBoxLayout(val_bar)
+        val_bar_lay.setContentsMargins(6, 4, 6, 4)
+        val_bar_lay.setSpacing(8)
+        lbl_cell = QLabel('Value:')
+        lbl_cell.setStyleSheet('color: #777; font-size: 11px; min-width: 36px;')
+        val_bar_lay.addWidget(lbl_cell)
+        self._val_display = QLineEdit()
+        self._val_display.setReadOnly(True)
+        self._val_display.setPlaceholderText('Click a cell to see its full value...')
+        self._val_display.setStyleSheet(
+            'QLineEdit { background: #1A1A1A; color: #D4D4D4; border: 1px solid #3A3A3A;'
+            ' border-radius: 3px; font-size: 12px; padding: 3px 8px; }'
+        )
+        val_bar_lay.addWidget(self._val_display)
+        val_bar.hide()
+        self._val_bar = val_bar
+        lay.addWidget(val_bar)
 
         return panel
 
@@ -661,6 +729,14 @@ class MainWindow(QMainWindow):
             if step:
                 self._apply_step(step)
 
+    def _add_split_column(self):
+        if self.engine is None or self.engine.current is None:
+            return
+        cols = list(self.engine.current.columns)
+        dlg = SplitColumnDialog(self.engine.current, cols, self)
+        if dlg.exec_():
+            self._apply_step(dlg.get_step())
+
     def _add_cross_match(self):
         if self.engine.current is None:
             return
@@ -742,6 +818,14 @@ class MainWindow(QMainWindow):
 
     def _on_header_add_index(self):
         self._apply_step({'operation': 'add_index_column', 'params': {}})
+
+    def _on_cell_selected(self, current, _previous):
+        if not current.isValid():
+            self._val_display.clear()
+            return
+        val = self._model.data(current, Qt.DisplayRole)
+        self._val_display.setText(str(val) if val is not None else '')
+        self._val_display.setCursorPosition(0)
 
     def _on_col_selection_changed(self, col_indices: list):
         if not col_indices:
@@ -979,6 +1063,8 @@ class MainWindow(QMainWindow):
         self._col_header.set_type_hints(self._model.column_type_hints())
         for col in range(self._model.columnCount()):
             self._table_view.setColumnWidth(col, max(100, min(220, 20 * len(str(df.columns[col])))))
+        self._val_bar.show()
+        self._val_display.clear()
 
     def _refresh_pipeline(self, select_idx: int = -1):
         self._refreshing_pipeline = True
@@ -1045,6 +1131,13 @@ class MainWindow(QMainWindow):
             col = p.get('column', '')
             thr = p.get('threshold', 0.85)
             return f'{col}  |  threshold ≥{thr}'
+        if op == 'split_column':
+            col = p.get('column', '')
+            delim = repr(p.get('delimiter', ''))
+            idx = p.get('part_index', 0)
+            new_col = p.get('new_col_name', '')
+            dest = f'  →  "{new_col}"' if new_col else '  (overwrite)'
+            return f'{col}  split({delim})[{idx}]{dest}'
         return ''
 
     def _update_status(self, preview_idx: int = None, df=None):
@@ -1095,10 +1188,12 @@ class MainWindow(QMainWindow):
             self._set_data_actions_enabled(True)
             self._empty_label.hide()
             self._table_view.show()
+            self._val_bar.show()
         else:
             self._set_data_actions_enabled(False)
             self._empty_label.show()
             self._table_view.hide()
+            self._val_bar.hide()
         self._update_status()
         self._update_title()
         self._query_sidebar.refresh(self.project, name)
@@ -1419,23 +1514,35 @@ class MainWindow(QMainWindow):
             QToolBar {
                 background-color: #3C3F41;
                 border-bottom: 1px solid #2B2D30;
-                padding: 3px 6px;
-                spacing: 2px;
+                padding: 2px 4px;
+                spacing: 0px;
             }
-            QToolBar QToolButton {
+            QToolBar #tb_btn {
                 color: #DDDDDD;
                 background-color: transparent;
                 border: 1px solid transparent;
                 border-radius: 4px;
-                padding: 4px 10px;
+                padding: 3px 9px;
                 font-size: 12px;
             }
-            QToolBar QToolButton:hover {
+            QToolBar #tb_btn:hover {
                 background-color: #4A90E2;
                 color: white;
                 border-color: #357ABD;
             }
-            QToolBar QToolButton:disabled { color: #666666; }
+            QToolBar #tb_btn:disabled { color: #555555; }
+            QToolBar #tb_group {
+                background-color: transparent;
+            }
+            QToolBar #tb_group_lbl {
+                color: #777777;
+                font-size: 9px;
+                padding: 0px;
+            }
+            QToolBar #tb_vsep {
+                background-color: #555555;
+                margin: 4px 3px;
+            }
             QToolBar::separator {
                 background-color: #555555;
                 width: 1px;
