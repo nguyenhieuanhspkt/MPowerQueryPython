@@ -9,23 +9,51 @@ Chay: python main.py
 
 --------------------------------------------------------------------------------
 MUC LUC
-  1. Mo file du lieu
-  2. Cac thao tac co ban (Filter, Sort, Drop...)
-  3. GROUP ROWS (tong hop / nhom du lieu)  *** PHAN QUAN TRONG NHAT ***
-  4. Cast Type (doi kieu du lieu)
-  5. Pipeline va Recipe
-  6. Phim tat
-  7. Xuat du lieu
-  8. Cac luu y ve so lieu Viet Nam
+   1. Mo file du lieu / He thong Project (.mpq)
+   2. Cac thao tac co ban (Filter, Sort, Drop...)
+   3. GROUP ROWS (tong hop / nhom du lieu)      *** QUAN TRONG ***
+   4. FLATTEN HIERARCHY (du lieu phan cap - dang wide)
+   5. EXPAND HIERARCHY (du lieu phan cap - dang narrow/stacked)
+   6. Cast Type (doi kieu du lieu)
+   7. Pipeline va Recipe
+   8. Phim tat
+   9. Xuat du lieu
+  10. Cac luu y ve so lieu Viet Nam
+  11. AI SEMANTIC FILTER (tim kiem gan dung)
+  12. AI FUZZY DEDUP (gop trung lap mo)
+  13. AI CROSS-FILE MATCH (khop du lieu 2 file)
 --------------------------------------------------------------------------------
 
 
-1. MO FILE DU LIEU
-==================
-  - File > Open  hoac  Ctrl+O
-  - Ho tro: .csv, .xlsx, .xls
-  - CSV: se hoi ky tu phan cach (;  hoac  ,  hoac Tab) va dau thap phan
-  - Excel nhieu sheet: se hien hop chon sheet
+1. MO FILE DU LIEU / HE THONG PROJECT (.MPQ)
+=============================================
+
+  MO FILE DON LE (cu):
+    - File > Open  hoac  Ctrl+O
+    - Ho tro: .csv, .xlsx, .xls
+    - CSV: se hoi ky tu phan cach (;  hoac  ,  hoac Tab) va dau thap phan
+    - Excel nhieu sheet: se hien hop chon sheet
+
+  HE THONG PROJECT (.MPQ) - QUAN TRONG:
+    Mot project (.mpq) chua NHIEU QUERY chay theo thu tu.
+    Moi query la 1 luong xu ly rieng co the tham chieu nhau.
+
+    Tao project moi:    File > New Project  (Ctrl+N)
+    Mo project:         File > Open Project  (Ctrl+O)
+    Luu project:        File > Save Project  (Ctrl+S)
+    Them query tu file: File > Add Query from File  (Ctrl+Shift+O)
+                        hoac nut "+ Add Query" tren sidebar trai
+
+  CAC LOAI QUERY:
+    - From File     : load truc tiep tu CSV/Excel (bieu tuong trang)
+    - Merge Queries : JOIN 2 query (left / inner / right / outer)
+    - Append Queries: noi doc nhieu query thanh 1 bang (UNION)
+    - From Query    : dung ket qua cua query khac lam source
+
+  SIDEBAR QUERY (ben trai):
+    - Click ten query de chuyen sang query do
+    - Chuot phai: Refresh / Export / Rename / Delete
+    - "+" o duoi de them query moi
 
 
 2. CAC THAO TAC CO BAN
@@ -34,17 +62,18 @@ MUC LUC
   FILTER (loc dong)
     Menu: Transform > Filter Rows
     - Chon cot, chon dieu kien, nhap gia tri
-    - Cot da filter se hien mui ten xanh (V) tren header
-    - Dieu kien so: greater_than / less_than / ... (can nhap so dung dinh dang)
+    - Cot da filter se hien mui ten xanh + cham tren header
+    - Dieu kien so: greater_than / less_than / ... (nhap so dung dinh dang)
 
   DROP COLUMNS (xoa cot)
     Menu: Transform > Drop Columns
     - Tich chon cac cot can xoa > Drop Selected
     - Cach nhanh: Ctrl+click nhieu cot tren header > chuot phai > Drop Selected
 
-  DROP DUPLICATES (xoa trung lap)
+  DROP DUPLICATES (xoa trung lap chinh xac)
     Menu: Transform > Drop Duplicates
-    - Khong can cau hinh, ap dung ngay
+    - Xoa dong trung lap hoan toan (100% giong nau)
+    - Xem AI Fuzzy Dedup (muc 12) de xoa trung lap "gan giong"
 
   SORT (sap xep)
     Menu: Transform > Sort Rows
@@ -67,101 +96,183 @@ MUC LUC
     Menu: Transform > Use First Row as Header
     - Dung khi file co dong tieu de nam trong data, khong phai header that su
 
+  ADD INDEX COLUMN (them cot STT)
+    - Them cot "STT" tu 1 den N vao vi tri dau tien
+    - Chuot phai header > Add Index Column (STT)
+
 
 --------------------------------------------------------------------------------
 3. GROUP ROWS (NHOM VA TONG HOP DU LIEU)
 =========================================
 
-  Day la tinh nang phuc tap nhat - tuong tu GROUP BY trong SQL
-  hoac "Group By" trong Power Query cua Excel.
-
-  MUC DICH:
-    Nhom cac dong co cung gia tri theo 1 hoac nhieu cot,
-    sau do tinh toan (dem, cong, trung binh...) cho cac cot con lai.
-
-  Vi du thuc te:
-    Du lieu goc:
-      Tinh       | San pham   | Doanh thu | So don
-      ------------|------------|-----------|-------
-      Ha Noi      | Ao         | 500000    | 10
-      Ha Noi      | Quan       | 300000    | 6
-      TP HCM      | Ao         | 800000    | 15
-      TP HCM      | Ao         | 200000    | 4
-
-    Group by "Tinh", aggregate "Doanh thu"=Sum, "So don"=Count:
-      Tinh       | Doanh thu | So don
-      ------------|-----------|-------
-      Ha Noi      | 800000    | 2
-      TP HCM      | 1000000   | 2
+  Tuong tu GROUP BY trong SQL / "Group By" trong Power Query.
 
   CACH DUNG:
-    Buoc 1: Menu Transform > Group Rows...
-            (hoac nut "Group" tren thanh cong cu)
-
-    Buoc 2: Phan "Group by" (o tren)
-            - Tich chon cot(s) de NHOM
-            - Co the chon nhieu cot (vi du: ca Tinh va Nam)
-            - Cot nao chon o day se KHONG xuat hien trong phan Aggregate
-
-    Buoc 3: Phan "Aggregate" (o duoi)
-            - Moi cot con lai co 1 o chon ham:
-              -- (bo qua)  : khong giu cot nay trong ket qua
-              Count        : dem so dong trong moi nhom
-              Sum          : cong cac gia tri so
-              Mean         : tinh trung binh cong
-              Min          : gia tri nho nhat
-              Max          : gia tri lon nhat
-              First        : lay gia tri dau tien trong nhom
-              Last         : lay gia tri cuoi cung trong nhom
-            - Cot da chon Group by se tu dong bi vo hieu hoa o day
-
+    Buoc 1: Menu Transform > Group Rows...  (hoac nut "Group")
+    Buoc 2: Phan "Group by" - chon cot(s) de NHOM
+    Buoc 3: Phan "Aggregate" - chon ham cho tung cot con lai:
+              -- (bo qua)  khong giu cot nay
+              Count        dem so dong trong nhom
+              Sum          cong cac gia tri so
+              Mean         tinh trung binh cong
+              Min / Max    gia tri nho nhat / lon nhat
+              First / Last gia tri dau / cuoi trong nhom
     Buoc 4: Bam "Apply Group"
 
-  LUU Y QUAN TRONG:
-    - Phai chon it nhat 1 cot Group by
-    - Phai chon it nhat 1 cot Aggregate (khac "bo qua")
-    - Sum / Mean / Min / Max: nen dung voi cot so lieu
-      (neu cot la chu, ket qua co the la NaN hoac khong co nghia)
-    - Count dem so dong trong nhom, dung duoc cho moi loai cot
-    - Cac cot khong chon Group by va de "bo qua" se bi XOA khoi ket qua
-    - De hoan tac: nut "Undo" hoac Ctrl+Z
-
-  SAU KHI GROUP:
-    - So dong thuong giam di rat nhieu (du lieu da duoc tom gon)
-    - Co the tiep tuc Filter / Sort tren ket qua
-    - "View Pandas Code" se hien lenh groupby tuong duong
+  LUU Y:
+    - Phai chon it nhat 1 cot Group by VA 1 cot Aggregate
+    - Sum/Mean/Min/Max nen dung voi cot so lieu
+    - Count dung duoc cho moi loai cot
 
 
 --------------------------------------------------------------------------------
-4. CAST TYPE (DOI KIEU DU LIEU)
+4. FLATTEN HIERARCHY (DU LIEU PHAN CAP - DANG WIDE)
+=====================================================
+
+  DUNG KHI NAO:
+    File Excel co merged cells - moi cap phan cap co COT RIENG nhung o tren bi hop:
+
+      Nhom hang   | Ma hang | So luong      <- cot rieng moi cap
+      ------------|---------|----------
+      VAT LIEU    | (trong) | (trong)       <- dong cha (merged cell)
+      (trong)     | VL001   | 100           <- dong con
+      (trong)     | VL002   | 200
+      NHAN CONG   | (trong) | (trong)
+      (trong)     | NC001   | 10
+
+    Pandas doc vao: merged cells -> NaN o cac dong con.
+    => Flatten: ffill "Nhom hang" xuong, xoa dong cha (cot con toan trong)
+
+  CACH DUNG:
+    Buoc 1: Menu Transform > Flatten Hierarchy...  (hoac nut "Flatten")
+    Buoc 2: Tich chon cac cot nhom (group columns)
+            - Phan mem tu dong tich cot co nhieu o trong (20-90% empty) - danh dau (*)
+            - Co the chinh lai bang tay
+    Buoc 3: Giu nguyen "Xoa dong cha" (mac dinh bat)
+    Buoc 4: Bam "Preview" kiem tra ket qua
+            - Cot nhom duoc to mau xanh duong nhat
+            - Hien so dong truoc / sau
+    Buoc 5: Bam "Apply"
+
+  KET QUA:
+    Nhom hang   | Ma hang | So luong
+    VAT LIEU    | VL001   | 100
+    VAT LIEU    | VL002   | 200
+    NHAN CONG   | NC001   | 10
+
+  PHAN BIET VOI EXPAND HIERARCHY:
+    Flatten = nhieu cot rieng moi cap, cot bi trong (NaN) -> ffill xuong
+    Expand  = nhieu cap CHUNG 1 cot, phan biet bang prefix (xem muc 5)
+
+
+--------------------------------------------------------------------------------
+5. EXPAND HIERARCHY (DU LIEU PHAN CAP - DANG NARROW/STACKED)
+==============================================================
+
+  DUNG KHI NAO:
+    ERP / phan mem ke toan export ra file ma nhieu cap phan cap
+    nam CHUNG TRONG 1 COT, phan biet bang noi dung (prefix):
+
+      Ngay viet        | SCT-Nhap      | Dien giai
+      -----------------|---------------|----------
+      Kho: 750-EVT-... | (trong)       | (trong)  <- cap 1: Kho
+      Vat tu: 1.01...  | (trong)       | (trong)  <- cap 2: Vat tu
+      2025-01-07       | 01.750.01.001 | Nhap kho <- dong du lieu that
+      2025-01-08       | (trong)       | Dieu chinh
+
+    => Can them cot "Kho" va cot "Vat tu" vao moi dong du lieu.
+
+  CACH DUNG:
+    Buoc 1: Menu Transform > Expand Hierarchy...  (hoac nut "Expand")
+
+    Buoc 2: Chon "Cot nguon" (cot chua ca parent lau leaf) - vi du: "Ngay viet"
+
+    Buoc 3: Dinh nghia rules nhan dang cap (moi dong = 1 cap):
+            Moi rule gom 4 truong:
+              [Lv 1] Ten cot moi | Dieu kien  | Pattern     | Strip prefix
+              [Lv 1] Kho         | Starts with| Kho         | Kho:
+              [Lv 2] Vat tu      | Starts with| Vat tu      | Vat tu:
+
+            - Ten cot moi : ten cot se duoc them vao ket qua
+            - Dieu kien   : starts_with / contains / ends_with /
+                            is_numeric / is_date / regex
+            - Pattern     : gia tri de nhan biet dong cha
+            - Strip prefix: phan can xoa khi lay gia tri (de trong = giu nguyen)
+            - Bam "+ Them cap" neu co nhieu cap hon
+
+            BADGE "Lv 1", "Lv 2"... cho biet thu tu uu tien nhan dang.
+            Rule nao o tren duoc uu tien truoc (match rule nao thi thoi).
+
+    Buoc 4: Chon "Dong leaf" (cach nhan biet dong du lieu that):
+              La so hoac ngay (date/number) <- pho bien nhat
+              Khong khop rule nao
+              Khong trong (not empty)
+
+    Buoc 5: Bam "Preview" kiem tra ket qua
+            - Cot moi them duoc to mau xanh la
+            - Status hien "X dong ket qua, xoa Y dong, them Z cot: [Kho, Vat tu]"
+
+    Buoc 6: Bam "Apply"
+
+  KET QUA:
+    Kho          | Vat tu    | Ngay viet  | SCT-Nhap      | Dien giai
+    750-EVT-...  | 1.01...   | 2025-01-07 | 01.750.01.001 | Nhap kho
+    750-EVT-...  | 1.01...   | 2025-01-08 | (trong)       | Dieu chinh
+
+  DIEU KIEN HO TRO:
+    starts_with  : bat dau bang chu "Kho", "Vat tu", "Chuong"...
+    contains     : chua chuoi bat ky
+    ends_with    : ket thuc bang
+    is_numeric   : la so (nhan ra hang so luong, gia tri)
+    is_date      : la ngay thang (nhan ra dong du lieu ngay)
+    regex        : bieu thuc chinh quy (nang cao)
+
+
+--------------------------------------------------------------------------------
+6. CAST TYPE (DOI KIEU DU LIEU)
 =================================
 
-  Cach nhanh nhat: chuot phai vao header cot > Cast to Number  hoac  Cast to Text
-  Hoac xem badge "123" / "ABC" tren header de biet kieu hien tai.
+  Badge tren header cot:
+    [123] xanh la  = Numeric (so)
+    [ABC] xanh navy = Text (chu)
+    [DT]  xanh teal = Date (ngay thang)
 
-  - Cast to Number (123): chuyen chuoi sang so de tinh toan
-  - Cast to Text (ABC):   chuyen so sang chuoi (them chu 0 dang truoc...)
+  Cach doi kieu - chuot phai vao header cot:
+    - Cast to Number  (123): chuyen chuoi -> so de tinh toan
+    - Cast to Text    (ABC): chuyen so -> chuoi
+    - Convert to Date (DT) : chuyen chuoi -> datetime (dd/mm/yyyy)
 
   Khi nao can:
     - Cot so bi doc la chu -> Sum/Mean bi loi -> Cast to Number truoc
     - Muon giu so 0 dang truoc (ma don hang, so dien thoai) -> Cast to Text
+    - Cot ngay bi doc la chu -> sort / tinh khoang cach ngay sai -> Cast to Date
+
+  Auto-detect ngay:
+    Phan mem tu dong hien goi y "DT" neu cot co >= 80% gia tri dang dd/mm/yyyy
+    Bam goi y de chuyen sang kieu Date ngay.
 
 
 --------------------------------------------------------------------------------
-5. PIPELINE VA RECIPE
+7. PIPELINE VA RECIPE
 ======================
 
   PIPELINE (danh sach buoc xu ly):
     - Hien thi ben trai man hinh
     - Moi buoc co mau sac rieng de de nhan biet
+    - Bam nut [x] tren buoc bat ky de xoa buoc do (rebuild tu goc)
     - Bam Undo xoa buoc cuoi cung
-    - Bam Reset quay ve du lieu goc (xac nhan truoc)
+    - Bam Reset quay ve du lieu goc
 
   RECIPE (luu pipeline):
-    - File > Save Recipe  (Ctrl+S): luu thanh file .json
-    - File > Load Recipe  (Ctrl+R): tai lai va ap dung pipeline cu
+    - Edit > Save Recipe   : luu thanh file .json
+    - Edit > Load Recipe   : tai lai va ap dung pipeline cu
     - Dung khi phai xu ly cung 1 dinh dang file hang thang
     - Recipe luu vao thu muc config/ theo mac dinh
+
+  PROJECT (.MPQ) THAY THE RECIPE:
+    - Project luu toan bo (nhieu query + recipe cua tung query)
+    - Tu dong save khi thay doi (neu da co file .mpq)
+    - Uu tien dung .mpq thay vi recipe don le
 
   VIEW PANDAS CODE:
     - Nut "View Code" hoac menu View > View Pandas Code
@@ -170,23 +281,26 @@ MUC LUC
 
 
 --------------------------------------------------------------------------------
-6. PHIM TAT
+8. PHIM TAT
 ===========
 
-  Ctrl+O    Mo file
+  Ctrl+N    Tao project moi
+  Ctrl+O    Mo project / Mo file
+  Ctrl+S    Luu project
+  Ctrl+Shift+S  Luu project as...
+  Ctrl+Shift+O  Them query tu file
   Ctrl+E    Xuat du lieu
-  Ctrl+S    Luu Recipe
-  Ctrl+R    Tai Recipe
   Ctrl+Z    Undo buoc cuoi
+  Ctrl+R    Refresh query / Tai recipe
 
   Tren header cot:
-    Ctrl+Click        Chon nhieu cot cung luc
-    Click bieu tuong V (xanh/trang)   Mo FilterDialog cho cot do
-    Chuot phai        Menu: Drop / Keep / Filter / Rename / Cast
+    Ctrl+Click                Chon nhieu cot cung luc
+    Click bieu tuong V (^)    Mo FilterDialog cho cot do
+    Chuot phai                Menu: Drop / Keep / Filter / Rename / Cast / Add Index
 
 
 --------------------------------------------------------------------------------
-7. XUAT DU LIEU
+9. XUAT DU LIEU
 ================
 
   File > Export  hoac  Ctrl+E
@@ -194,9 +308,12 @@ MUC LUC
   - Excel (.xlsx): so lieu duoc chuyen dung kieu (khong bi "Number Stored as Text")
   - Dau thap phan trong CSV theo cai dat luc mo file (phay hoac cham)
 
+  Cung co the export tung query rieng:
+    Chuot phai vao ten query trong sidebar > Export
+
 
 --------------------------------------------------------------------------------
-8. LUU Y VE SO LIEU VIET NAM
+10. LUU Y VE SO LIEU VIET NAM
 ==============================
 
   Dau thap phan:
@@ -205,71 +322,102 @@ MUC LUC
     - Khi mo CSV chon dung "Dau thap phan" de phan mem doc dung
 
   So co dau cham ngan (vi du: 1.500):
-    - Neu decimal=phay -> 1.500 duoc hieu la 1500 (nghìn)
+    - Neu decimal=phay -> 1.500 duoc hieu la 1500 (nghin)
     - Neu decimal=cham -> 1.500 duoc hieu la 1.5
 
   Hien thi:
     - Phan mem tu dong sua "1500.0" -> "1.500" (dang Viet Nam)
-    - Badge "123" tren header neu cot la so, "ABC" neu la chu
+    - Badge "123" tren header neu cot la so, "ABC" neu la chu, "DT" neu la ngay
 
 
 --------------------------------------------------------------------------------
-9. AI SEMANTIC FILTER (TIM KIEM GAN DUNG BANG BGE-M3)
+11. AI SEMANTIC FILTER (TIM KIEM GAN DUNG BANG BGE-M3)
 =======================================================
 
-  Day la tinh nang AI: tim cac dong co NOI DUNG TUONG DONG voi tu khoa nhap vao,
+  Tim cac dong co NOI DUNG TUONG DONG voi tu khoa,
   KHONG phai tim chinh xac nhu Filter thuong.
 
-  Vi du thuc te:
-    Tim "may bom nuoc" se tim duoc ca:
-      "Centrifugal pump 3HP", "EBARA pump 2 inch", "May bom ly tam",
-      "Water pump EBARA", "Bom nuoc cong nghiep"...
-    (du ten goi khac nhau, tieng Viet / tieng Anh tron)
+  Vi du: Tim "may bom nuoc" ra ca:
+    "Centrifugal pump 3HP", "EBARA pump 2 inch", "May bom ly tam",
+    "Water pump EBARA", "Bom nuoc cong nghiep"...
 
   CACH DUNG:
-    Buoc 1: Load file du lieu (bat buoc phai co du lieu truoc)
-    Buoc 2: Bam nut "AI Filter" tren thanh cong cu
-            hoac menu Transform > AI Semantic Filter...
-    Buoc 3: Chon cot can tim kiem (thuong la cot ten hang hoa, mo ta...)
-    Buoc 4: Nhap noi dung tim kiem (query)
-            Vi du: "may bom nuoc", "thiet bi dien ha the", "van cau PN16"
-    Buoc 5: Bam "Tim kiem" -> doi khoang 10-30 giay (BGE-M3 dang tinh toan)
-            * LAN DAU tien chay: ~15 giay de nap model vao RAM (~3-4 GB)
-            * Cac lan sau trong cung session: nhanh hon (model da cache)
-    Buoc 6: KIEM TRA KET QUA:
-            - Bang hien cac dong sap xep tu tuong dong cao nhat xuong thap nhat
-            - Dau dam (den) = se duoc GIU LAI (diem >= nguong)
-            - Dau xam     = se bi LOAI (diem < nguong)
-            - Score hien o cot phai: 0.00 (khac hoan toan) -> 1.00 (giong het)
-    Buoc 7: KEO SLIDER "Nguong" de dieu chinh
-            - Tang nguong -> giu lai it dong hon nhung chinh xac hon
-            - Giam nguong -> giu lai nhieu dong hon nhung co the co sai
-            - Doi: "X / Y rows se duoc giu lai"
-    Buoc 8: Bam "Apply" -> step ghi vao pipeline (mau tim)
+    1. Bam "AI Filter" hoac Transform > AI Semantic Filter...
+    2. Chon cot can tim kiem (ten hang hoa, mo ta...)
+    3. Nhap noi dung tim kiem
+    4. Bam "Tim kiem" -> doi 10-30 giay
+       * Lan dau: ~15 giay de nap model BGE-M3 vao RAM (~3-4 GB)
+    5. Kiem tra ket qua:
+         In dam = se GIUM LAI (diem >= nguong)
+         In xam = se BI LOAI  (diem < nguong)
+    6. Keo SLIDER "Nguong" de dieu chinh (0.85+ = rat tin tuong)
+    7. Bam "Apply" -> ghi vao pipeline (mau tim)
 
-  HUONG DAN KIEM TRA TRUOC KHI APPLY:
-    - Kiem tra cac dong dau dam: co dung la nhung gi minh can?
-    - Kiem tra cac dong xam: co dong nao bi loai oan khong?
-    - Neu co dong sai tren nguong: tang nguong them 0.05-0.10
-    - Neu co dong dung bi xam: giam nguong them 0.05-0.10
-    - KHONG NEN apply khi chua xem het cac dong gan ranh gioi nguong
+  LUU Y:
+    - Day la tim kiem GAN DUNG, khong dam bao 100% chinh xac
+    - User PHAI tu kiem tra truoc khi Apply
+    - Score >= 0.85: rat tin tuong | 0.70-0.84: can xem lai | < 0.70: thuong sai
 
-  LUU Y QUAN TRONG:
-    - Day la tim kiem GAN DUNG - khong dam bao 100% chinh xac
-    - User PHAI tu kiem tra ket qua truoc khi Apply
-    - Score >= 0.85: rat tin tuong
-    - Score 0.70-0.84: can xem lai
-    - Score < 0.70: thuong la sai
-    - Step luu vao recipe theo "cot + query + nguong" -> co the tai su dung
 
-  YEU CAU HE THONG:
-    - RAM: can ~3-4 GB trong khi chay AI Filter
-    - CPU: chay tren CPU, khong can GPU
-    - Model BGE-M3 dat tai: D:\TaskApp_kiet\TaskApp\search_item2\...\AI_models\BGE
-    - Packages can: sentence-transformers, faiss-cpu, torch, numpy
+--------------------------------------------------------------------------------
+12. AI FUZZY DEDUP (GOP TRUNG LAP MO)
+======================================
+
+  Xoa cac dong "gan giong nhau" (khac mot it: viet tat, loi chinh ta, dau cach...)
+  Khac Drop Duplicates (chi xoa giong 100%).
+
+  Vi du:
+    "May bom nuoc EBARA"  ->  giu lai (canonical)
+    "May bom EBARA"       ->  xoa (trung lap)
+    "Bom EBARA nuoc"      ->  xoa (trung lap)
+
+  CACH DUNG:
+    1. Bam "AI Dedup" hoac Transform > AI Fuzzy Dedup...
+    2. Chon cot can dedup
+    3. Chinh nguong tuong dong (mac dinh 0.85)
+       - Cao hon (0.90+): chi xoa khi rat giong
+       - Thap hon (0.80-): xoa ca khi hoi khac
+    4. Bam "Tim trung lap" -> xem bang cac nhom
+       - Cot "Giu lai": gia tri dau tien trong nhom (canonical)
+       - Cot "Trung voi": gia tri se bi xoa
+       - Score: muc do tuong dong
+    5. Bam "Apply" -> chi giu 1 dong dau tien moi nhom
+
+  LUU Y:
+    - Nen xem ki bang truoc khi Apply
+    - Thay doi nguong -> bam "Tim trung lap" lai de cap nhat
+
+
+--------------------------------------------------------------------------------
+13. AI CROSS-FILE MATCH (KHOP DU LIEU 2 FILE)
+==============================================
+
+  Khop tung dong cua Frame A voi gia tri gan nhat trong Frame B
+  (tuong tu VLOOKUP nhung dung AI thay vi khop chinh xac).
+
+  Ket qua: Frame A + 3 cot moi:
+    _best_match  : gia tri khop tot nhat tu Frame B
+    _match_score : diem tuong dong (0.0 - 1.0)
+    _match_status: su do muc do (xanh >= 0.80 / vang 0.50-0.79 / do < 0.50)
+
+  CACH DUNG:
+    Yeu cau: Can co it nhat 1 Stored Frame (Frame B - lam tham chieu).
+    De tao Stored Frame: mo file thu 2, chon Stored Frames panel > luu.
+
+    1. Bam "AI Match" hoac Transform > AI Cross-file Match...
+    2. Chon Frame A (hien tai hoac Stored Frame)
+    3. Chon Frame B (phai la Stored Frame)
+    4. Chon cot khoa cua tung frame
+    5. Bam "Match" -> doi ket qua
+    6. Ket qua luu vao Stored Frames (khong anh huong pipeline chinh)
+
+  DUNG KHI NAO:
+    - Can khop ten hang hoa giua 2 danh muc khac nhau
+    - VLOOKUP bi loi vi ten viet tat / khac nhau mot phan
+    - Doi chieu du lieu giua 2 he thong
 
 
 ================================================================================
-  Cap nhat lan cuoi: 2026-06-18
+  Cap nhat lan cuoi: 2026-06-19
   Lien he / bao loi: hieunavt4mail@gmail.com
 ================================================================================
