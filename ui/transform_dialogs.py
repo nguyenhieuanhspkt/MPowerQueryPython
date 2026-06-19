@@ -1155,6 +1155,15 @@ class _RuleRow(QWidget):
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(4)
 
+        self.lbl_level = QLabel('Lv ?')
+        self.lbl_level.setFixedWidth(34)
+        self.lbl_level.setAlignment(Qt.AlignCenter)
+        self.lbl_level.setStyleSheet(
+            'color: #0D9488; font-weight: bold; font-size: 11px;'
+            'background: #F0FDFA; border: 1px solid #99F6E4;'
+            'border-radius: 3px; padding: 1px 2px;'
+        )
+
         self.col_edit     = QLineEdit(); self.col_edit.setPlaceholderText('Tên cột mới')
         self.cond_combo   = QComboBox()
         for key, label in self._CONDITIONS:
@@ -1167,6 +1176,7 @@ class _RuleRow(QWidget):
         del_btn.setObjectName('btn_cancel')
         del_btn.clicked.connect(lambda: self.sig_remove.emit(self))
 
+        lay.addWidget(self.lbl_level,    0)
         lay.addWidget(self.col_edit,     3)
         lay.addWidget(self.cond_combo,   3)
         lay.addWidget(self.pattern_edit, 3)
@@ -1250,7 +1260,7 @@ class ExpandHierarchyDialog(QDialog):
         hdr_lay = QHBoxLayout(hdr)
         hdr_lay.setContentsMargins(0, 0, 0, 0)
         hdr_lay.setSpacing(4)
-        for txt, s in [('Tên cột mới', 3), ('Điều kiện', 3), ('Pattern', 3), ('Strip prefix', 3), ('', 1)]:
+        for txt, s in [('Level', 0), ('Tên cột mới', 3), ('Điều kiện', 3), ('Pattern', 3), ('Strip prefix', 3), ('', 1)]:
             lbl = QLabel(txt)
             lbl.setStyleSheet('color: #6B7280; font-size: 10px; font-weight: bold;')
             hdr_lay.addWidget(lbl, s)
@@ -1335,6 +1345,7 @@ class ExpandHierarchyDialog(QDialog):
         rr.sig_remove.connect(self._remove_rule)
         self._rule_rows.append(rr)
         self._rules_layout.insertWidget(self._rules_layout.count() - 1, rr)
+        self._update_level_labels()
 
     def _remove_rule(self, rr):
         if len(self._rule_rows) <= 1:
@@ -1342,6 +1353,11 @@ class ExpandHierarchyDialog(QDialog):
         rr.setParent(None)
         rr.deleteLater()
         self._rule_rows.remove(rr)
+        self._update_level_labels()
+
+    def _update_level_labels(self):
+        for i, rr in enumerate(self._rule_rows):
+            rr.lbl_level.setText(f'Lv {i + 1}')
 
     def _get_valid_levels(self):
         return [rr.get_level() for rr in self._rule_rows if rr.is_valid()]
