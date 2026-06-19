@@ -15,6 +15,7 @@ _OP_LABELS = {
     'cast_column':             'Cast Type',
     'group_rows':              'Group Rows',
     'add_index_column':        'Add Index (STT)',
+    'flatten_hierarchy':       'Flatten Hierarchy',
     'semantic_filter':         'AI Semantic Filter',
     'semantic_dedup':          'AI Fuzzy Dedup',
 }
@@ -137,6 +138,34 @@ class DataEngine:
             actual = self._unique_col_name(col_name)
             params['col_name'] = actual
             self._current.insert(position, actual, range(1, len(self._current) + 1))
+
+        elif op == 'flatten_hierarchy':
+            group_cols  = params.get('group_cols', [])
+            drop_parent = params.get('drop_parent_rows', True)
+            if not group_cols:
+                return self._current
+            missing = [c for c in group_cols if c not in self._current.columns]
+            if missing:
+                raise ValueError(f'Cột không tồn tại: {", ".join(missing)}')
+            df = self._current.copy()
+            # Normalize empty strings → None so ffill works on both NaN and ''
+            for col in group_cols:
+                s = df[col]
+                empty_mask = s.isna() | (s.astype(str).str.strip() == '')
+                df[col] = s.where(~empty_mask, other=None)
+            df[group_cols] = df[group_cols].ffill()
+            if drop_parent:
+                leaf_cols = [c for c in df.columns if c not in group_cols]
+                if leaf_cols:
+                    def _all_empty(row):
+                        return all(
+                            (v is None or (isinstance(v, float) and v != v)
+                             or (isinstance(v, str) and v.strip() == ''))
+                            for v in row
+                        )
+                    is_parent = df[leaf_cols].apply(_all_empty, axis=1)
+                    df = df[~is_parent]
+            self._current = df.reset_index(drop=True)
 
         elif op == 'semantic_filter':
             col = params.get('column')

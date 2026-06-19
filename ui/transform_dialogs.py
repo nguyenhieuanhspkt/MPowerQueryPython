@@ -1,3 +1,5 @@
+import pandas as pd
+
 from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QFormLayout,
     QComboBox, QLineEdit, QLabel, QPushButton,
@@ -1124,6 +1126,241 @@ class FuzzyDedupDialog(QDialog):
             },
         }
         self.accept()
+
+    def get_step(self):
+        return self._step
+
+
+# ---------------------------------------------------------------------------
+# Flatten Hierarchy / Denormalize dialog
+# ---------------------------------------------------------------------------
+
+class FlattenHierarchyDialog(QDialog):
+    """Flatten hierarchical/nested tabular data (Excel merged cells pattern).
+
+    User picks "group/hierarchy" columns. The engine will:
+    1. Forward-fill (ffill) those columns so every child row inherits its parent value.
+    2. Drop "parent rows" — rows where all non-group columns are empty.
+
+    Auto-detects likely group columns based on empty-value density.
+    Shows a live preview with group columns highlighted in blue.
+    """
+
+    def __init__(self, df: pd.DataFrame, parent=None):
+        super().__init__(parent)
+        self.df    = df
+        self._step = None
+        self._setup_ui()
+        self._auto_detect()
+
+    # ------------------------------------------------------------------ UI
+
+    def _setup_ui(self):
+        self.setWindowTitle('Flatten Hierarchy / Denormalize')
+        self.setMinimumSize(820, 540)
+        self.setStyleSheet(DIALOG_STYLE)
+
+        main_lay = QVBoxLayout(self)
+        main_lay.setSpacing(10)
+        main_lay.setContentsMargins(14, 14, 14, 14)
+
+        desc = QLabel(
+            'Chọn các cột định danh nhóm (hierarchy/group columns). '
+            'Chúng sẽ được điền xuống (fill down). '
+            'Các dòng cha — nơi mọi cột còn lại đều trống — sẽ bị xóa.'
+        )
+        desc.setWordWrap(True)
+        desc.setStyleSheet('color: #555; font-size: 11px; padding-bottom: 4px;')
+        main_lay.addWidget(desc)
+
+        splitter = QSplitter(Qt.Horizontal)
+
+        # ---- Left panel: column picker ----
+        left = QWidget()
+        left_lay = QVBoxLayout(left)
+        left_lay.setContentsMargins(0, 0, 8, 0)
+        left_lay.setSpacing(6)
+
+        lbl_cols = QLabel('Cột nhóm (hierarchy columns):')
+        lbl_cols.setStyleSheet('font-weight: bold; font-size: 12px;')
+        left_lay.addWidget(lbl_cols)
+
+        hint = QLabel('★ = auto-detected (nhiều ô trống)')
+        hint.setStyleSheet('color: #888; font-size: 10px;')
+        left_lay.addWidget(hint)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setStyleSheet('QScrollArea { border: 1px solid #CED4DA; border-radius: 4px; }')
+        inner = QWidget()
+        inner_lay = QVBoxLayout(inner)
+        inner_lay.setSpacing(3)
+        inner_lay.setContentsMargins(8, 8, 8, 8)
+
+        self._checkboxes: dict = {}
+        n = max(len(self.df), 1)
+        for col in self.df.columns:
+            s = self.df[col]
+            empty_pct = int(
+                (s.isna() | (s.astype(str).str.strip() == '')).sum() * 100 / n
+            )
+            label = f'{col}  ({empty_pct}% trống)'
+            cb = QCheckBox(label)
+            cb.setProperty('col_name', col)
+            self._checkboxes[col] = cb
+            inner_lay.addWidget(cb)
+        inner_lay.addStretch()
+        scroll.setWidget(inner)
+        left_lay.addWidget(scroll)
+
+        sel_row = QHBoxLayout()
+        btn_all = QPushButton('Chọn tất cả')
+        btn_all.setObjectName('btn_cancel')
+        btn_all.clicked.connect(lambda: [cb.setChecked(True) for cb in self._checkboxes.values()])
+        btn_none = QPushButton('Bỏ chọn')
+        btn_none.setObjectName('btn_cancel')
+        btn_none.clicked.connect(lambda: [cb.setChecked(False) for cb in self._checkboxes.values()])
+        sel_row.addWidget(btn_all)
+        sel_row.addWidget(btn_none)
+        sel_row.addStretch()
+        left_lay.addLayout(sel_row)
+
+        self._drop_parent_cb = QCheckBox('Xóa dòng cha (parent rows trống)')
+        self._drop_parent_cb.setChecked(True)
+        left_lay.addWidget(self._drop_parent_cb)
+
+        self._btn_preview = QPushButton('Preview')
+        self._btn_preview.setObjectName('btn_primary')
+        self._btn_preview.clicked.connect(self._do_preview)
+        left_lay.addWidget(self._btn_preview)
+
+        splitter.addWidget(left)
+
+        # ---- Right panel: preview table ----
+        right = QWidget()
+        right_lay = QVBoxLayout(right)
+        right_lay.setContentsMargins(0, 0, 0, 0)
+        right_lay.setSpacing(4)
+
+        self._lbl_status = QLabel('Chọn cột nhóm rồi bấm Preview để xem kết quả.')
+        self._lbl_status.setStyleSheet('color: #888; font-size: 11px;')
+        self._lbl_status.setWordWrap(True)
+        right_lay.addWidget(self._lbl_status)
+
+        self._preview_table = QTableWidget()
+        self._preview_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self._preview_table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self._preview_table.verticalHeader().setDefaultSectionSize(22)
+        self._preview_table.setAlternatingRowColors(True)
+        self._preview_table.horizontalHeader().setStretchLastSection(True)
+        right_lay.addWidget(self._preview_table)
+
+        note = QLabel('Cột nhóm được tô màu xanh. Hiển thị tối đa 30 dòng đầu.')
+        note.setStyleSheet('color: #AAA; font-size: 10px;')
+        right_lay.addWidget(note)
+
+        splitter.addWidget(right)
+        splitter.setSizes([260, 540])
+        main_lay.addWidget(splitter)
+
+        btn_box = QDialogButtonBox()
+        self._btn_apply = btn_box.addButton('Apply', QDialogButtonBox.AcceptRole)
+        self._btn_apply.setEnabled(False)
+        btn_box.addButton(QDialogButtonBox.Cancel)
+        btn_box.accepted.connect(self._on_accept)
+        btn_box.rejected.connect(self.reject)
+        main_lay.addWidget(btn_box)
+
+    # ------------------------------------------------------------------ logic
+
+    def _auto_detect(self):
+        """Pre-check columns that look like hierarchy columns (20–90% empty cells)."""
+        n = max(len(self.df), 1)
+        for col, cb in self._checkboxes.items():
+            s = self.df[col]
+            empty_frac = (s.isna() | (s.astype(str).str.strip() == '')).sum() / n
+            if 0.20 <= empty_frac <= 0.90:
+                cb.setChecked(True)
+                # Append star marker to label
+                cb.setText(cb.text() + '  ★')
+
+    def _get_group_cols(self):
+        return [col for col, cb in self._checkboxes.items() if cb.isChecked()]
+
+    def _do_preview(self):
+        group_cols  = self._get_group_cols()
+        if not group_cols:
+            self._lbl_status.setText('Chưa chọn cột nhóm nào.')
+            self._preview_table.clear()
+            self._preview_table.setRowCount(0)
+            self._btn_apply.setEnabled(False)
+            self._step = None
+            return
+
+        drop_parent = self._drop_parent_cb.isChecked()
+        try:
+            df = self.df.copy()
+            for col in group_cols:
+                s = df[col]
+                empty_mask = s.isna() | (s.astype(str).str.strip() == '')
+                df[col] = s.where(~empty_mask, other=None)
+            df[group_cols] = df[group_cols].ffill()
+
+            if drop_parent:
+                leaf_cols = [c for c in df.columns if c not in group_cols]
+                if leaf_cols:
+                    def _all_empty(row):
+                        return all(
+                            (v is None
+                             or (isinstance(v, float) and v != v)
+                             or (isinstance(v, str) and v.strip() == ''))
+                            for v in row
+                        )
+                    is_parent = df[leaf_cols].apply(_all_empty, axis=1)
+                    df = df[~is_parent]
+
+            df = df.reset_index(drop=True)
+            preview = df.head(30)
+
+            self._preview_table.clear()
+            self._preview_table.setRowCount(len(preview))
+            self._preview_table.setColumnCount(len(preview.columns))
+            self._preview_table.setHorizontalHeaderLabels(list(preview.columns))
+
+            group_set = set(group_cols)
+            _BLUE = QColor('#DBEAFE')
+            for r, row in enumerate(preview.itertuples(index=False)):
+                for c, val in enumerate(row):
+                    item = QTableWidgetItem('' if pd.isna(val) else str(val))
+                    if preview.columns[c] in group_set:
+                        item.setBackground(_BLUE)
+                    self._preview_table.setItem(r, c, item)
+
+            removed = len(self.df) - len(df)
+            self._lbl_status.setText(
+                f'Kết quả: {len(df):,} dòng  (xóa {removed:,} dòng cha)  '
+                f'· ffill {len(group_cols)} cột nhóm'
+            )
+            self._lbl_status.setStyleSheet('color: #16A34A; font-size: 11px; font-weight: bold;')
+            self._btn_apply.setEnabled(True)
+            self._step = {
+                'operation': 'flatten_hierarchy',
+                'params': {
+                    'group_cols':      group_cols,
+                    'drop_parent_rows': drop_parent,
+                },
+            }
+        except Exception as exc:
+            self._lbl_status.setText(f'Lỗi: {exc}')
+            self._lbl_status.setStyleSheet('color: #DC2626; font-size: 11px;')
+            self._btn_apply.setEnabled(False)
+            self._step = None
+
+    def _on_accept(self):
+        if self._step is None:
+            self._do_preview()
+        if self._step is not None:
+            self.accept()
 
     def get_step(self):
         return self._step

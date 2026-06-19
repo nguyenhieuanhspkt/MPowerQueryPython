@@ -126,6 +126,19 @@ class Recipe:
                 pos = int(p.get('position', 0))
                 lines.append(f"df.insert({pos}, '{col}', range(1, len(df) + 1))")
 
+            elif op == 'flatten_hierarchy':
+                gcols = repr(p.get('group_cols', []))
+                drop  = p.get('drop_parent_rows', True)
+                lines.append(f"_group_cols = {gcols}")
+                lines.append(f"for _c in _group_cols:")
+                lines.append(f"    _s = df[_c]; df[_c] = _s.where(~(_s.isna() | (_s.astype(str).str.strip() == '')), other=None)")
+                lines.append(f"df[_group_cols] = df[_group_cols].ffill()")
+                if drop:
+                    lines.append(f"_leaf = [c for c in df.columns if c not in _group_cols]")
+                    lines.append(f"if _leaf:")
+                    lines.append(f"    df = df[~df[_leaf].apply(lambda r: all((v is None or (isinstance(v,float) and v!=v) or (isinstance(v,str) and v.strip()=='')) for v in r), axis=1)]")
+                lines.append(f"df = df.reset_index(drop=True)")
+
             elif op == 'semantic_filter':
                 col = p.get('column')
                 query = p.get('query', '')
