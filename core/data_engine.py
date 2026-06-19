@@ -16,6 +16,7 @@ _OP_LABELS = {
     'group_rows':              'Group Rows',
     'add_index_column':        'Add Index (STT)',
     'flatten_hierarchy':       'Flatten Hierarchy',
+    'expand_hierarchy':        'Expand Hierarchy',
     'semantic_filter':         'AI Semantic Filter',
     'semantic_dedup':          'AI Fuzzy Dedup',
 }
@@ -165,6 +166,97 @@ class DataEngine:
                         )
                     is_parent = df[leaf_cols].apply(_all_empty, axis=1)
                     df = df[~is_parent]
+            self._current = df.reset_index(drop=True)
+
+        elif op == 'expand_hierarchy':
+            import re as _re
+
+            source_col  = params.get('source_col')
+            levels      = params.get('levels', [])
+            leaf_cond   = params.get('leaf_condition', 'not_any_rule')
+            drop_parent = params.get('drop_parent_rows', True)
+
+            if not source_col or source_col not in self._current.columns:
+                raise ValueError(f'Cột nguồn "{source_col}" không tồn tại.')
+            if not levels:
+                raise ValueError('Chưa định nghĩa rule nhận dạng cấp nào.')
+
+            df = self._current.copy()
+            n  = len(df)
+
+            def _cv(raw):
+                return '' if (raw is None or (isinstance(raw, float) and raw != raw)) else str(raw).strip()
+
+            def _match_rule(val, cond, pat):
+                if cond == 'starts_with': return val.startswith(pat)
+                if cond == 'contains':    return pat in val
+                if cond == 'ends_with':   return val.endswith(pat)
+                if cond == 'is_numeric':
+                    try: float(val.replace(',', '.')); return True
+                    except ValueError: return False
+                if cond == 'is_date':     return bool(_re.match(r'\d{1,4}[\-/\.T ]\d{1,2}', val))
+                if cond == 'regex':       return bool(_re.search(pat, val))
+                return False
+
+            def _is_leaf(val, cond):
+                if cond == 'is_date_or_number':
+                    try: float(val.replace(',', '.')); return True
+                    except ValueError: pass
+                    return bool(_re.match(r'\d{1,4}[\-/\.T ]\d{1,2}', val))
+                if cond == 'not_any_rule': return True
+                if cond == 'is_not_empty': return bool(val)
+                return False
+
+            # Resolve unique column names, update params in-place for rebuild consistency
+            existing = set(df.columns)
+            for lvl in levels:
+                orig  = lvl['col_name']
+                aname = orig
+                idx   = 1
+                while aname in existing:
+                    aname = f'{orig}_{idx}'; idx += 1
+                existing.add(aname)
+                lvl['col_name'] = aname
+
+            # Classify each row: None=leaf, col_name=parent, 'skip'=discard
+            row_kind = []
+            for i in range(n):
+                val     = _cv(df.iloc[i][source_col])
+                matched = None
+                for lvl in levels:
+                    if _match_rule(val, lvl['condition'], lvl.get('match_value', '')):
+                        matched = lvl['col_name']
+                        break
+                if matched:
+                    row_kind.append(matched)
+                elif _is_leaf(val, leaf_cond):
+                    row_kind.append(None)
+                else:
+                    row_kind.append('skip')
+
+            # Insert level columns at front (reversed → rule #1 ends up leftmost)
+            for lvl in reversed(levels):
+                aname = lvl['col_name']
+                strip = lvl.get('strip_prefix', '')
+                vals  = []
+                for i, kind in enumerate(row_kind):
+                    if kind == aname:
+                        raw = _cv(df.iloc[i][source_col])
+                        vals.append(raw[len(strip):].strip() if strip and raw.startswith(strip) else raw)
+                    else:
+                        vals.append(None)
+                df.insert(0, aname, vals)
+
+            # Forward-fill level columns
+            level_cols = [lvl['col_name'] for lvl in levels]
+            df[level_cols] = df[level_cols].ffill()
+
+            # Filter rows: skip rows are always dropped; parent rows dropped only if requested
+            if drop_parent:
+                df = df[[k is None for k in row_kind]]
+            else:
+                df = df[[k != 'skip' for k in row_kind]]
+
             self._current = df.reset_index(drop=True)
 
         elif op == 'semantic_filter':

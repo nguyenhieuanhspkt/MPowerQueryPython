@@ -1132,6 +1132,356 @@ class FuzzyDedupDialog(QDialog):
 
 
 # ---------------------------------------------------------------------------
+# Expand Hierarchy dialog  (narrow/stacked → wide/denormalized)
+# ---------------------------------------------------------------------------
+
+class _RuleRow(QWidget):
+    """One rule card: col_name | condition | pattern | strip_prefix | [×]."""
+
+    _CONDITIONS = [
+        ('starts_with', 'Starts with'),
+        ('contains',    'Contains'),
+        ('ends_with',   'Ends with'),
+        ('is_numeric',  'Is numeric'),
+        ('is_date',     'Is date'),
+        ('regex',       'Regex'),
+    ]
+
+    sig_remove = pyqtSignal(object)   # emits self
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(4)
+
+        self.col_edit     = QLineEdit(); self.col_edit.setPlaceholderText('Tên cột mới')
+        self.cond_combo   = QComboBox()
+        for key, label in self._CONDITIONS:
+            self.cond_combo.addItem(label, key)
+        self.pattern_edit = QLineEdit(); self.pattern_edit.setPlaceholderText('Pattern...')
+        self.strip_edit   = QLineEdit(); self.strip_edit.setPlaceholderText('Xóa prefix này')
+
+        del_btn = QPushButton('×')
+        del_btn.setFixedWidth(26)
+        del_btn.setObjectName('btn_cancel')
+        del_btn.clicked.connect(lambda: self.sig_remove.emit(self))
+
+        lay.addWidget(self.col_edit,     3)
+        lay.addWidget(self.cond_combo,   3)
+        lay.addWidget(self.pattern_edit, 3)
+        lay.addWidget(self.strip_edit,   3)
+        lay.addWidget(del_btn,           0)
+
+    def get_level(self):
+        return {
+            'col_name':     self.col_edit.text().strip(),
+            'condition':    self.cond_combo.currentData(),
+            'match_value':  self.pattern_edit.text(),
+            'strip_prefix': self.strip_edit.text(),
+        }
+
+    def is_valid(self):
+        lvl  = self.get_level()
+        need_pat = lvl['condition'] not in ('is_numeric', 'is_date')
+        return bool(lvl['col_name']) and (bool(lvl['match_value']) or not need_pat)
+
+
+class ExpandHierarchyDialog(QDialog):
+    """Expand narrow/stacked hierarchy → wide format.
+
+    User defines level-detection rules (starts_with / contains / …) on a pivot column.
+    Each rule maps to a new output column that gets filled down.
+    Leaf rows (actual data rows) are kept; parent rows are dropped.
+    """
+
+    _LEAF_CONDITIONS = [
+        ('is_date_or_number', 'Là số hoặc ngày (date / number)'),
+        ('not_any_rule',      'Không khớp rule nào'),
+        ('is_not_empty',      'Không trống (not empty)'),
+    ]
+
+    def __init__(self, df: pd.DataFrame, parent=None):
+        super().__init__(parent)
+        self.df         = df
+        self._step      = None
+        self._rule_rows = []          # list of _RuleRow
+        self._setup_ui()
+        self._add_rule()              # start with 2 empty rows
+        self._add_rule()
+
+    # ------------------------------------------------------------------ UI
+
+    def _setup_ui(self):
+        self.setWindowTitle('Expand Hierarchy — Narrow → Wide')
+        self.setMinimumSize(940, 600)
+        self.setStyleSheet(DIALOG_STYLE)
+
+        main_lay = QVBoxLayout(self)
+        main_lay.setSpacing(8)
+        main_lay.setContentsMargins(14, 14, 14, 14)
+
+        desc = QLabel(
+            'Phát hiện dòng parent qua pattern trong cột nguồn, tách thành các cột riêng, '
+            'fill down rồi xóa parent rows. Kết quả: dữ liệu phẳng (wide format).'
+        )
+        desc.setWordWrap(True)
+        desc.setStyleSheet('color: #555; font-size: 11px; padding-bottom: 2px;')
+        main_lay.addWidget(desc)
+
+        splitter = QSplitter(Qt.Horizontal)
+
+        # ---- LEFT panel ----
+        left = QWidget()
+        ll = QVBoxLayout(left)
+        ll.setContentsMargins(0, 0, 8, 0)
+        ll.setSpacing(8)
+
+        # Source column
+        src_row = QHBoxLayout()
+        src_row.addWidget(QLabel('Cột nguồn (pivot):'))
+        self._src_combo = QComboBox()
+        self._src_combo.addItems(list(self.df.columns))
+        src_row.addWidget(self._src_combo, 1)
+        ll.addLayout(src_row)
+
+        # Rule table header
+        hdr = QWidget()
+        hdr_lay = QHBoxLayout(hdr)
+        hdr_lay.setContentsMargins(0, 0, 0, 0)
+        hdr_lay.setSpacing(4)
+        for txt, s in [('Tên cột mới', 3), ('Điều kiện', 3), ('Pattern', 3), ('Strip prefix', 3), ('', 1)]:
+            lbl = QLabel(txt)
+            lbl.setStyleSheet('color: #6B7280; font-size: 10px; font-weight: bold;')
+            hdr_lay.addWidget(lbl, s)
+        ll.addWidget(hdr)
+
+        # Rules scroll area
+        self._rules_scroll = QScrollArea()
+        self._rules_scroll.setWidgetResizable(True)
+        self._rules_scroll.setStyleSheet('QScrollArea { border: 1px solid #CED4DA; border-radius: 4px; }')
+        self._rules_container = QWidget()
+        self._rules_layout = QVBoxLayout(self._rules_container)
+        self._rules_layout.setSpacing(4)
+        self._rules_layout.setContentsMargins(6, 6, 6, 6)
+        self._rules_layout.addStretch()
+        self._rules_scroll.setWidget(self._rules_container)
+        ll.addWidget(self._rules_scroll, 1)
+
+        btn_add = QPushButton('＋ Thêm cấp')
+        btn_add.setObjectName('btn_cancel')
+        btn_add.clicked.connect(self._add_rule)
+        ll.addWidget(btn_add)
+
+        # Leaf condition
+        leaf_row = QHBoxLayout()
+        leaf_row.addWidget(QLabel('Dòng leaf (giữ lại):'))
+        self._leaf_combo = QComboBox()
+        for key, label in self._LEAF_CONDITIONS:
+            self._leaf_combo.addItem(label, key)
+        leaf_row.addWidget(self._leaf_combo, 1)
+        ll.addLayout(leaf_row)
+
+        self._drop_cb = QCheckBox('Xóa dòng parent sau khi expand')
+        self._drop_cb.setChecked(True)
+        ll.addWidget(self._drop_cb)
+
+        btn_preview = QPushButton('Preview')
+        btn_preview.setObjectName('btn_primary')
+        btn_preview.clicked.connect(self._do_preview)
+        ll.addWidget(btn_preview)
+
+        splitter.addWidget(left)
+
+        # ---- RIGHT panel (preview) ----
+        right = QWidget()
+        rl = QVBoxLayout(right)
+        rl.setContentsMargins(0, 0, 0, 0)
+        rl.setSpacing(4)
+
+        self._lbl_status = QLabel('Điền rules và bấm Preview để xem kết quả.')
+        self._lbl_status.setWordWrap(True)
+        self._lbl_status.setStyleSheet('color: #888; font-size: 11px;')
+        rl.addWidget(self._lbl_status)
+
+        self._preview_table = QTableWidget()
+        self._preview_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self._preview_table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self._preview_table.verticalHeader().setDefaultSectionSize(22)
+        self._preview_table.setAlternatingRowColors(True)
+        self._preview_table.horizontalHeader().setStretchLastSection(True)
+        rl.addWidget(self._preview_table)
+
+        note = QLabel('Cột mới (level cols) tô màu xanh lá. Hiển thị tối đa 30 dòng.')
+        note.setStyleSheet('color: #AAA; font-size: 10px;')
+        rl.addWidget(note)
+
+        splitter.addWidget(right)
+        splitter.setSizes([300, 620])
+        main_lay.addWidget(splitter, 1)
+
+        btn_box = QDialogButtonBox()
+        self._btn_apply = btn_box.addButton('Apply', QDialogButtonBox.AcceptRole)
+        self._btn_apply.setEnabled(False)
+        btn_box.addButton(QDialogButtonBox.Cancel)
+        btn_box.accepted.connect(self._on_accept)
+        btn_box.rejected.connect(self.reject)
+        main_lay.addWidget(btn_box)
+
+    # ------------------------------------------------------------------ rule management
+
+    def _add_rule(self):
+        rr = _RuleRow(self)
+        rr.sig_remove.connect(self._remove_rule)
+        self._rule_rows.append(rr)
+        self._rules_layout.insertWidget(self._rules_layout.count() - 1, rr)
+
+    def _remove_rule(self, rr):
+        if len(self._rule_rows) <= 1:
+            return
+        rr.setParent(None)
+        rr.deleteLater()
+        self._rule_rows.remove(rr)
+
+    def _get_valid_levels(self):
+        return [rr.get_level() for rr in self._rule_rows if rr.is_valid()]
+
+    # ------------------------------------------------------------------ preview / logic
+
+    def _do_preview(self):
+        import re as _re
+
+        source_col = self._src_combo.currentText()
+        levels     = self._get_valid_levels()
+        if not levels:
+            self._lbl_status.setText('Chưa có rule nào hợp lệ — điền Tên cột + Pattern.')
+            self._lbl_status.setStyleSheet('color: #D97706; font-size: 11px;')
+            self._btn_apply.setEnabled(False)
+            return
+
+        leaf_cond   = self._leaf_combo.currentData()
+        drop_parent = self._drop_cb.isChecked()
+
+        try:
+            df = self.df.copy()
+            n  = len(df)
+
+            def _cv(raw):
+                return '' if (raw is None or (isinstance(raw, float) and raw != raw)) else str(raw).strip()
+
+            def _match(val, cond, pat):
+                if cond == 'starts_with': return val.startswith(pat)
+                if cond == 'contains':    return pat in val
+                if cond == 'ends_with':   return val.endswith(pat)
+                if cond == 'is_numeric':
+                    try: float(val.replace(',', '.')); return True
+                    except ValueError: return False
+                if cond == 'is_date':     return bool(_re.match(r'\d{1,4}[\-/\.T ]\d{1,2}', val))
+                if cond == 'regex':       return bool(_re.search(pat, val))
+                return False
+
+            def _leaf(val, cond):
+                if cond == 'is_date_or_number':
+                    try: float(val.replace(',', '.')); return True
+                    except ValueError: pass
+                    return bool(_re.match(r'\d{1,4}[\-/\.T ]\d{1,2}', val))
+                if cond == 'not_any_rule': return True
+                if cond == 'is_not_empty': return bool(val)
+                return False
+
+            # Classify rows
+            row_kind = []
+            for i in range(n):
+                val     = _cv(df.iloc[i][source_col])
+                matched = None
+                for lvl in levels:
+                    if _match(val, lvl['condition'], lvl.get('match_value', '')):
+                        matched = lvl['col_name']
+                        break
+                if matched:
+                    row_kind.append(matched)
+                elif _leaf(val, leaf_cond):
+                    row_kind.append(None)
+                else:
+                    row_kind.append('skip')
+
+            # Insert level columns (reversed → leftmost rule = leftmost col)
+            for lvl in reversed(levels):
+                aname = lvl['col_name']
+                strip = lvl.get('strip_prefix', '')
+                vals  = []
+                for i, kind in enumerate(row_kind):
+                    if kind == aname:
+                        raw = _cv(df.iloc[i][source_col])
+                        vals.append(raw[len(strip):].strip() if strip and raw.startswith(strip) else raw)
+                    else:
+                        vals.append(None)
+                df.insert(0, aname, vals)
+
+            # ffill level columns
+            level_col_names = [lvl['col_name'] for lvl in levels]
+            df[level_col_names] = df[level_col_names].ffill()
+
+            if drop_parent:
+                result = df[[k is None for k in row_kind]].reset_index(drop=True)
+            else:
+                result = df[[k != 'skip' for k in row_kind]].reset_index(drop=True)
+
+            preview = result.head(30)
+
+            # Populate preview table
+            self._preview_table.clear()
+            self._preview_table.setRowCount(len(preview))
+            self._preview_table.setColumnCount(len(preview.columns))
+            self._preview_table.setHorizontalHeaderLabels(list(preview.columns))
+
+            new_set = set(level_col_names)
+            _GREEN  = QColor('#D1FAE5')
+            for r, row in enumerate(preview.itertuples(index=False)):
+                for c, val in enumerate(row):
+                    item = QTableWidgetItem(
+                        '' if (val is None or (isinstance(val, float) and val != val)) else str(val)
+                    )
+                    if preview.columns[c] in new_set:
+                        item.setBackground(_GREEN)
+                    self._preview_table.setItem(r, c, item)
+
+            removed  = n - len(result)
+            new_cols = ', '.join(level_col_names)
+            self._lbl_status.setText(
+                f'{len(result):,} dòng kết quả  (xóa {removed:,} dòng)  '
+                f'· {len(levels)} cột mới: {new_cols}'
+            )
+            self._lbl_status.setStyleSheet('color: #16A34A; font-size: 11px; font-weight: bold;')
+            self._btn_apply.setEnabled(True)
+
+            self._step = {
+                'operation': 'expand_hierarchy',
+                'params': {
+                    'source_col':       source_col,
+                    'levels':           levels,
+                    'leaf_condition':   leaf_cond,
+                    'drop_parent_rows': drop_parent,
+                },
+            }
+
+        except Exception as exc:
+            self._lbl_status.setText(f'Lỗi: {exc}')
+            self._lbl_status.setStyleSheet('color: #DC2626; font-size: 11px;')
+            self._btn_apply.setEnabled(False)
+            self._step = None
+
+    def _on_accept(self):
+        if self._step is None:
+            self._do_preview()
+        if self._step is not None:
+            self.accept()
+
+    def get_step(self):
+        return self._step
+
+
+# ---------------------------------------------------------------------------
 # Flatten Hierarchy / Denormalize dialog
 # ---------------------------------------------------------------------------
 

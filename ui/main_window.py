@@ -25,6 +25,7 @@ from ui.transform_dialogs import (
     GroupRowsDialog, SemanticFilterDialog,
     FuzzyDedupDialog, CrossFileMatchDialog,
     FlattenHierarchyDialog,
+    ExpandHierarchyDialog,
 )
 
 def _fmt_agg(value: float, decimal: str = ',') -> str:
@@ -57,6 +58,7 @@ _STEP_META = {
     'group_rows':            ('Group Rows',            '#F39C12'),
     'add_index_column':      ('Add Index (STT)',        '#10B981'),
     'flatten_hierarchy':     ('Flatten Hierarchy',     '#0F766E'),
+    'expand_hierarchy':      ('Expand Hierarchy',      '#0D9488'),
     'semantic_filter':       ('AI Semantic Filter',    '#7C3AED'),
     'semantic_dedup':        ('AI Fuzzy Dedup',        '#9333EA'),
 }
@@ -189,6 +191,7 @@ class MainWindow(QMainWindow):
         tm.addSeparator()
         tm.addAction('Group Rows...', self._add_group_rows)
         tm.addAction('Flatten Hierarchy...', self._add_flatten_hierarchy)
+        tm.addAction('Expand Hierarchy...', self._add_expand_hierarchy)
         tm.addSeparator()
         tm.addAction('AI Semantic Filter...', self._add_semantic_filter)
         tm.addAction('AI Fuzzy Dedup...', self._add_fuzzy_dedup)
@@ -230,6 +233,7 @@ class MainWindow(QMainWindow):
         self._act_header      = act('Row→Header', 'Use first row as column headers',    self._add_use_first_row_as_header)
         self._act_group       = act('Group',      'Group rows / aggregate',             self._add_group_rows)
         self._act_flatten     = act('Flatten',    'Flatten hierarchy / denormalize',    self._add_flatten_hierarchy)
+        self._act_expand      = act('Expand',     'Expand narrow → wide hierarchy',     self._add_expand_hierarchy)
         tb.addSeparator()
         self._act_semantic    = act('AI Filter',  'Semantic filter bằng BGE-M3',        self._add_semantic_filter)
         self._act_fuzzy_dedup = act('AI Dedup',   'Fuzzy dedup bằng BGE-M3',            self._add_fuzzy_dedup)
@@ -245,7 +249,7 @@ class MainWindow(QMainWindow):
             self._act_filter, self._act_drop_cols, self._act_dedup,
             self._act_sort, self._act_rename, self._act_fillna,
             self._act_rm_top, self._act_header, self._act_group,
-            self._act_flatten,
+            self._act_flatten, self._act_expand,
             self._act_fuzzy_dedup, self._act_cross_match,
             self._act_semantic,
             self._act_undo, self._act_reset, self._act_code,
@@ -625,6 +629,15 @@ class MainWindow(QMainWindow):
         if self.engine is None or self.engine.current is None:
             return
         dlg = FlattenHierarchyDialog(self.engine.current, self)
+        if dlg.exec_():
+            step = dlg.get_step()
+            if step:
+                self._apply_step(step)
+
+    def _add_expand_hierarchy(self):
+        if self.engine is None or self.engine.current is None:
+            return
+        dlg = ExpandHierarchyDialog(self.engine.current, self)
         if dlg.exec_():
             step = dlg.get_step()
             if step:
