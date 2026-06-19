@@ -15,6 +15,8 @@ _OP_LABELS = {
     'cast_column':             'Cast Type',
     'group_rows':              'Group Rows',
     'add_index_column':        'Add Index (STT)',
+    'semantic_filter':         'AI Semantic Filter',
+    'semantic_dedup':          'AI Fuzzy Dedup',
 }
 
 
@@ -25,6 +27,17 @@ class DataEngine:
         self._source_path: str = ''
         self._sheet_name: Optional[str] = None
         self._decimal: str = ','   # default Vietnamese
+
+    def load_df(self, df: pd.DataFrame, decimal: str = None) -> pd.DataFrame:
+        """Load an already-computed DataFrame as the source (for derived queries)."""
+        if decimal is not None:
+            self._decimal = decimal
+        self._source_path = ''
+        self._sheet_name = None
+        self._original = df.copy()
+        self._original.columns = [str(c) for c in self._original.columns]
+        self._current = self._original.copy()
+        return self._current
 
     def load(self, path: str, sheet_name: str = None, csv_sep: str = 'auto', decimal: str = ',') -> pd.DataFrame:
         self._source_path = path
@@ -108,14 +121,96 @@ class DataEngine:
             if to_type == 'numeric':
                 self._current.iloc[:, col_ix] = to_numeric_vn(
                     self._current.iloc[:, col_ix].astype(str), decimal=self._decimal)
-            else:
-                self._current.iloc[:, col_ix] = self._current.iloc[:, col_ix].astype(str)
+            elif to_type == 'date':
+                self._current.iloc[:, col_ix] = pd.to_datetime(
+                    self._current.iloc[:, col_ix].astype(str), dayfirst=True, errors='coerce')
+            else:  # 'text'
+                series = self._current.iloc[:, col_ix]
+                if series.dtype.kind == 'M':  # datetime64 → format as dd/mm/yyyy
+                    self._current.iloc[:, col_ix] = (
+                        series.dt.strftime('%d/%m/%Y').where(series.notna(), other=''))
+                else:
+                    self._current.iloc[:, col_ix] = series.astype(str)
         elif op == 'add_index_column':
             col_name = params.get('col_name', 'STT')
             position = int(params.get('position', 0))
             actual = self._unique_col_name(col_name)
             params['col_name'] = actual
             self._current.insert(position, actual, range(1, len(self._current) + 1))
+
+        elif op == 'semantic_filter':
+            col = params.get('column')
+            query = params.get('query', '')
+            threshold = float(params.get('threshold', 0.7))
+            if col not in self._current.columns:
+                raise ValueError(f'Cột "{col}" không tồn tại trong dữ liệu hiện tại.')
+            if not query.strip():
+                raise ValueError('Query không được để trống.')
+            import numpy as np
+            from core.ai import get_embedder
+            embedder = get_embedder()
+            values = self._current[col].fillna('').astype(str).tolist()
+            doc_vecs = embedder.embed_documents(values)
+            query_vec = embedder.embed_query(query)
+            doc_norms = np.linalg.norm(doc_vecs, axis=1, keepdims=True)
+            doc_vecs_norm = doc_vecs / (doc_norms + 1e-12)
+            q_norm = query_vec / (np.linalg.norm(query_vec) + 1e-12)
+            scores = doc_vecs_norm @ q_norm
+            mask = scores >= threshold
+            self._current = self._current[mask].reset_index(drop=True)
+
+        elif op == 'semantic_dedup':
+            col       = params.get('column')
+            threshold = float(params.get('threshold', 0.85))
+            if col not in self._current.columns:
+                raise ValueError(f'Cột "{col}" không tồn tại trong dữ liệu hiện tại.')
+            import numpy as np
+            import faiss
+            from collections import defaultdict
+            from core.ai import get_embedder
+            embedder = get_embedder()
+            values   = self._current[col].fillna('').astype(str).tolist()
+            n        = len(values)
+            if n < 2:
+                return self._current
+            vecs      = embedder.embed_documents(values)
+            norms     = np.linalg.norm(vecs, axis=1, keepdims=True)
+            vecs_norm = (vecs / (norms + 1e-12)).astype(np.float32)
+            dim   = vecs_norm.shape[1]
+            index = faiss.IndexFlatIP(dim)
+            index.add(vecs_norm)
+            k = min(30, n)
+            scores_mat, indices_mat = index.search(vecs_norm, k)
+            parent_arr = list(range(n))
+
+            def _find(x):
+                root = x
+                while parent_arr[root] != root:
+                    root = parent_arr[root]
+                while parent_arr[x] != root:
+                    nxt = parent_arr[x]
+                    parent_arr[x] = root
+                    x = nxt
+                return root
+
+            for i in range(n):
+                for ki in range(1, k):
+                    j     = int(indices_mat[i][ki])
+                    score = float(scores_mat[i][ki])
+                    if j < 0 or score < threshold:
+                        break
+                    ri, rj = _find(i), _find(j)
+                    if ri != rj:
+                        parent_arr[ri] = rj
+
+            seen_roots = set()
+            keep_mask  = []
+            for i in range(n):
+                root = _find(i)
+                keep_mask.append(root not in seen_roots)
+                seen_roots.add(root)
+
+            self._current = self._current[keep_mask].reset_index(drop=True)
 
         elif op == 'group_rows':
             by_cols = params.get('by', [])

@@ -106,6 +106,8 @@ class Recipe:
                 to_type = p.get('to_type', 'text')
                 if to_type == 'numeric':
                     lines.append(f"df['{col}'] = pd.to_numeric(df['{col}'].astype(str), errors='coerce')")
+                elif to_type == 'date':
+                    lines.append(f"df['{col}'] = pd.to_datetime(df['{col}'].astype(str), dayfirst=True, errors='coerce')")
                 else:
                     lines.append(f"df['{col}'] = df['{col}'].astype(str)")
 
@@ -123,6 +125,19 @@ class Recipe:
                 col = p.get('col_name', 'STT')
                 pos = int(p.get('position', 0))
                 lines.append(f"df.insert({pos}, '{col}', range(1, len(df) + 1))")
+
+            elif op == 'semantic_filter':
+                col = p.get('column')
+                query = p.get('query', '')
+                threshold = p.get('threshold', 0.7)
+                lines.append(f"# AI Semantic Filter: column='{col}', query='{query}', threshold={threshold}")
+                lines.append(f"# Requires BGE-M3 — see core/ai/embedder.py for implementation")
+
+            elif op == 'semantic_dedup':
+                col = p.get('column')
+                threshold = p.get('threshold', 0.85)
+                lines.append(f"# AI Fuzzy Dedup: column='{col}', threshold={threshold}")
+                lines.append(f"# Requires BGE-M3 + FAISS — see core/ai/ for implementation")
 
         lines += ['', "# df.to_csv('output.csv', index=False, encoding='utf-8-sig')"]
         return '\n'.join(lines)

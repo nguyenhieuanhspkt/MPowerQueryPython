@@ -213,7 +213,63 @@ MUC LUC
     - Badge "123" tren header neu cot la so, "ABC" neu la chu
 
 
+--------------------------------------------------------------------------------
+9. AI SEMANTIC FILTER (TIM KIEM GAN DUNG BANG BGE-M3)
+=======================================================
+
+  Day la tinh nang AI: tim cac dong co NOI DUNG TUONG DONG voi tu khoa nhap vao,
+  KHONG phai tim chinh xac nhu Filter thuong.
+
+  Vi du thuc te:
+    Tim "may bom nuoc" se tim duoc ca:
+      "Centrifugal pump 3HP", "EBARA pump 2 inch", "May bom ly tam",
+      "Water pump EBARA", "Bom nuoc cong nghiep"...
+    (du ten goi khac nhau, tieng Viet / tieng Anh tron)
+
+  CACH DUNG:
+    Buoc 1: Load file du lieu (bat buoc phai co du lieu truoc)
+    Buoc 2: Bam nut "AI Filter" tren thanh cong cu
+            hoac menu Transform > AI Semantic Filter...
+    Buoc 3: Chon cot can tim kiem (thuong la cot ten hang hoa, mo ta...)
+    Buoc 4: Nhap noi dung tim kiem (query)
+            Vi du: "may bom nuoc", "thiet bi dien ha the", "van cau PN16"
+    Buoc 5: Bam "Tim kiem" -> doi khoang 10-30 giay (BGE-M3 dang tinh toan)
+            * LAN DAU tien chay: ~15 giay de nap model vao RAM (~3-4 GB)
+            * Cac lan sau trong cung session: nhanh hon (model da cache)
+    Buoc 6: KIEM TRA KET QUA:
+            - Bang hien cac dong sap xep tu tuong dong cao nhat xuong thap nhat
+            - Dau dam (den) = se duoc GIU LAI (diem >= nguong)
+            - Dau xam     = se bi LOAI (diem < nguong)
+            - Score hien o cot phai: 0.00 (khac hoan toan) -> 1.00 (giong het)
+    Buoc 7: KEO SLIDER "Nguong" de dieu chinh
+            - Tang nguong -> giu lai it dong hon nhung chinh xac hon
+            - Giam nguong -> giu lai nhieu dong hon nhung co the co sai
+            - Doi: "X / Y rows se duoc giu lai"
+    Buoc 8: Bam "Apply" -> step ghi vao pipeline (mau tim)
+
+  HUONG DAN KIEM TRA TRUOC KHI APPLY:
+    - Kiem tra cac dong dau dam: co dung la nhung gi minh can?
+    - Kiem tra cac dong xam: co dong nao bi loai oan khong?
+    - Neu co dong sai tren nguong: tang nguong them 0.05-0.10
+    - Neu co dong dung bi xam: giam nguong them 0.05-0.10
+    - KHONG NEN apply khi chua xem het cac dong gan ranh gioi nguong
+
+  LUU Y QUAN TRONG:
+    - Day la tim kiem GAN DUNG - khong dam bao 100% chinh xac
+    - User PHAI tu kiem tra ket qua truoc khi Apply
+    - Score >= 0.85: rat tin tuong
+    - Score 0.70-0.84: can xem lai
+    - Score < 0.70: thuong la sai
+    - Step luu vao recipe theo "cot + query + nguong" -> co the tai su dung
+
+  YEU CAU HE THONG:
+    - RAM: can ~3-4 GB trong khi chay AI Filter
+    - CPU: chay tren CPU, khong can GPU
+    - Model BGE-M3 dat tai: D:\TaskApp_kiet\TaskApp\search_item2\...\AI_models\BGE
+    - Packages can: sentence-transformers, faiss-cpu, torch, numpy
+
+
 ================================================================================
-  Cap nhat lan cuoi: 2026-06-17
+  Cap nhat lan cuoi: 2026-06-18
   Lien he / bao loi: hieunavt4mail@gmail.com
 ================================================================================

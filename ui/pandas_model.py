@@ -12,6 +12,9 @@ MAX_DISPLAY_ROWS = 50_000
 # EXCLUDES trailing-zero strings like "1.500", "1.50" — those are source text, not FP results.
 _PLAIN_FLOAT_RE = _re.compile(r'^-?\d+\.(\d*[1-9]|0)$')
 
+# Matches common date string patterns: dd/mm/yyyy, yyyy-mm-dd, dd-mm-yyyy, dd.mm.yyyy
+_DATE_RE = _re.compile(r'^\d{1,4}[/\-\.]\d{1,2}[/\-\.]\d{2,4}$')
+
 
 def _fmt_cell(s: str, decimal: str = ',') -> str:
     """Clean up float strings produced by Excel dtype=str loading.
@@ -91,6 +94,9 @@ class PandasModel(QAbstractTableModel):
         hints = {}
         for i in range(len(self._df.columns)):
             series = self._df.iloc[:, i]
+            if series.dtype.kind == 'M':  # datetime64 column
+                hints[i] = 'date'
+                continue
             non_empty = series.dropna()
             non_empty = non_empty[non_empty.astype(str).str.strip() != '']
             if len(non_empty) == 0:
@@ -99,7 +105,11 @@ class PandasModel(QAbstractTableModel):
             sample = non_empty.head(500).astype(str)
             numeric = to_numeric_vn(sample, decimal=self._decimal)
             ratio = numeric.notna().sum() / len(sample)
-            hints[i] = 'numeric' if ratio >= 0.8 else 'text'
+            if ratio >= 0.8:
+                hints[i] = 'numeric'
+                continue
+            date_ratio = sample.str.strip().map(lambda x: bool(_DATE_RE.match(x))).mean()
+            hints[i] = 'date' if date_ratio >= 0.8 else 'text'
         return hints
 
     def rowCount(self, parent=QModelIndex()) -> int:
@@ -115,6 +125,8 @@ class PandasModel(QAbstractTableModel):
             val = self._df.iloc[index.row(), index.column()]
             if pd.isna(val):
                 return ''
+            if hasattr(val, 'strftime'):  # Timestamp / datetime
+                return val.strftime('%d/%m/%Y')
             s = _fmt_cell(str(val), self._decimal)
             if self._type_hints.get(index.column()) == 'numeric':
                 s = _add_thousands(s, self._decimal)
@@ -279,6 +291,10 @@ class SelectableHeaderView(QHeaderView):
             pill_bg   = QColor('#166534')   # dark green
             pill_fg   = QColor('#86EFAC')   # light green text
             label     = '123'
+        elif hint == 'date':
+            pill_bg   = QColor('#134E4A')   # dark teal
+            pill_fg   = QColor('#99F6E4')   # light teal text
+            label     = 'DT'
         else:
             pill_bg   = QColor('#1E3A5F')   # dark navy
             pill_fg   = QColor('#93C5FD')   # light blue text
@@ -286,8 +302,15 @@ class SelectableHeaderView(QHeaderView):
 
         if is_selected:
             # Adjust pill colors for amber background
-            pill_bg = QColor('#14532D') if hint == 'numeric' else QColor('#581C87')
-            pill_fg = QColor('#86EFAC') if hint == 'numeric' else QColor('#E9D5FF')
+            if hint == 'numeric':
+                pill_bg = QColor('#14532D')
+                pill_fg = QColor('#86EFAC')
+            elif hint == 'date':
+                pill_bg = QColor('#134E4A')
+                pill_fg = QColor('#99F6E4')
+            else:
+                pill_bg = QColor('#581C87')
+                pill_fg = QColor('#E9D5FF')
 
         # Zone background: clear any text super() painted here
         zone_bg = self._HEADER_SELECTED_BG if is_selected else self._HEADER_NORMAL_BG
@@ -393,6 +416,8 @@ class SelectableHeaderView(QHeaderView):
                 type_tag = '  [123 Number]'
             elif hint == 'text':
                 type_tag = '  [ABC Text]'
+            elif hint == 'date':
+                type_tag = '  [DT Date]'
             lbl_text = f'  Column: {col_name}{type_tag}'
         else:
             lbl_text = f'  {len(selected_names)} columns selected'
@@ -423,12 +448,21 @@ class SelectableHeaderView(QHeaderView):
             menu.addSeparator()
 
             if hint == 'text' or hint == 'empty':
-                act_cast = QAction('Convert to Number  (text → 123)', self)
-                act_cast.triggered.connect(
+                act_cast_num = QAction('Convert to Number  (text → 123)', self)
+                act_cast_num.triggered.connect(
                     lambda: self.sig_cast_column.emit(col_name, 'numeric'))
-                menu.addAction(act_cast)
+                menu.addAction(act_cast_num)
+                act_cast_date = QAction('Convert to Date  (text → DT)', self)
+                act_cast_date.triggered.connect(
+                    lambda: self.sig_cast_column.emit(col_name, 'date'))
+                menu.addAction(act_cast_date)
             if hint == 'numeric':
                 act_cast = QAction('Convert to Text  (123 → ABC)', self)
+                act_cast.triggered.connect(
+                    lambda: self.sig_cast_column.emit(col_name, 'text'))
+                menu.addAction(act_cast)
+            if hint == 'date':
+                act_cast = QAction('Convert to Text  (DT → ABC)', self)
                 act_cast.triggered.connect(
                     lambda: self.sig_cast_column.emit(col_name, 'text'))
                 menu.addAction(act_cast)
